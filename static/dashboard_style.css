@@ -1,0 +1,588 @@
+html {
+    width: 100%;
+    max-width: 100%;
+}
+
+*, *::before, *::after {
+    box-sizing: border-box;
+}
+
+body { 
+    margin: 0; 
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+    min-height: 100vh;
+    width: 100%;
+    max-width: 100%;
+    background-color: #f3f4f6; 
+    color: #1f2937; 
+    overflow-wrap: break-word;
+}
+
+.app-header {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background-color: #111827;
+    color: white;
+    box-shadow: 0 4px 12px rgba(17, 24, 39, 0.18);
+}
+/* @media (max-width: 900px)  */
+.topbar {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1.5rem;
+    padding: 1rem 2rem;
+    border-bottom: 1px solid #374151;
+}
+
+.brand { display: flex; align-items: baseline; gap: 0.65rem; min-width: 0; white-space: nowrap; }
+.brand h2 { margin: 0; font-size: 1.5rem; letter-spacing: -1px; }
+.brand span { color: #9ca3af; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.08em; }
+
+.session-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 1rem; min-width: 0; }
+.session-controls h1 { margin: 0; font-size: 1rem; font-weight: 600; color: #d1d5db; }
+
+.workspace-navigation {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-end;
+    gap: 0.75rem 1.25rem;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    padding: 0.75rem 2rem 1rem;
+}
+
+.area-tabs {
+    display: flex;
+    flex: 1 1 auto;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.15rem;
+    width: auto;
+    min-width: 0;
+}
+
+.area-tab {
+    appearance: none;
+    flex: 0 1 auto;
+    min-width: 0;
+    background: transparent;
+    color: #d1d5db;
+    border: 0;
+    border-bottom: 3px solid transparent;
+    padding: 0.55rem 0.9rem;
+    line-height: 1.2;
+    text-align: center;
+    white-space: nowrap;
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.8rem;
+    transition: background-color 0.2s, border-color 0.2s, color 0.2s;
+}
+
+.area-tab:hover { background-color: #1f2937; color: white; }
+.area-tab:focus-visible { outline: 2px solid #34d399; outline-offset: -2px; }
+.area-tab.active { background-color: #1f2937; border-bottom-color: #10b981; color: white; font-weight: 700; }
+
+.module-navigation {
+    display: flex;
+    flex: 0 1 auto;
+    flex-wrap: nowrap;
+    align-items: flex-end;
+    gap: 0.75rem 1.25rem;
+    width: auto;
+    min-width: 0;
+    margin-left: auto;
+}
+
+.module-select-wrapper {
+    flex: 0 1 18rem;
+    width: 18rem;
+    max-width: 22rem;
+    min-width: 14rem;
+}
+
+.module-select-label {
+    display: block;
+    margin-bottom: 0.35rem;
+    color: #9ca3af;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.module-select {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    padding: 0.65rem 2.25rem 0.65rem 0.75rem;
+    background-color: #1f2937;
+    color: white;
+    border: 1px solid #4b5563;
+    border-radius: 7px;
+    font: inherit;
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+
+.module-select:focus-visible {
+    outline: 2px solid #34d399;
+    outline-offset: 2px;
+}
+
+.navigation-breadcrumb {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+    min-width: 0;
+    margin: 0 0 0.65rem auto;
+    color: #9ca3af;
+    font-size: 0.8rem;
+}
+
+.navigation-breadcrumb strong { color: white; }
+
+.main-content { width: 100%; max-width: 100%; min-width: 0; padding: 2rem; }
+
+.btn-logout { background: #ef4444; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: bold; }
+.btn-logout:hover { background: #dc2626; }
+.btn-primary { background-color: #111827; color: white; border: none; padding: 0.6rem 1.2rem; border-radius: 6px; font-weight: 600; cursor: pointer; }
+.btn-primary:hover { background-color: #374151; }
+.btn-secondary { background-color: #e5e7eb; color: #374151; border: none; padding: 0.6rem 1.2rem; border-radius: 6px; font-weight: 600; cursor: pointer; }
+.btn-secondary:hover { background-color: #d1d5db; }
+
+.module-container { background: white; max-width: 100%; min-width: 0; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); flex: 1; }
+.modulo-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
+
+.card-form { background: #f9fafb; border: 1px solid #e5e7eb; padding: 1.5rem; border-radius: 8px; margin-bottom: 2rem; }
+.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1rem; }
+.form-actions { display: flex; flex-wrap: wrap; gap: 1rem; }
+
+.input-group { min-width: 0; }
+.input-group label { display: block; margin-bottom: 0.5rem; font-size: 0.85rem; font-weight: 600; color: #374151; }
+.input-group input, .input-group select { width: 100%; max-width: 100%; padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 8px; font-size: 1rem; }
+
+.oculto { display: none; }
+
+.tabla-container { max-width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; }
+.tabla-custom { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+.tabla-custom th, .tabla-custom td { padding: 0.75rem 1rem; text-align: left; border-bottom: 1px solid #e5e7eb; font-size: 0.9rem; }
+.tabla-custom th { background-color: #f9fafb; color: #4b5563; font-weight: 600; }
+
+.badge-success { background-color: #d1fae5; color: #065f46; padding: 0.25rem 0.6rem; border-radius: 999px; font-size: 0.75rem; font-weight: 600; }
+.badge-danger { background-color: #fee2e2; color: #991b1b; padding: 0.25rem 0.6rem; border-radius: 999px; font-size: 0.75rem; font-weight: 600; }
+.badge-warning { background-color: #fef3c7; color: #92400e; padding: 0.25rem 0.6rem; border-radius: 999px; font-size: 0.75rem; font-weight: 600; }
+.badge-neutral { background-color: #e5e7eb; color: #374151; padding: 0.25rem 0.6rem; border-radius: 999px; font-size: 0.75rem; font-weight: 600; }
+
+/* VENTAS A CRÉDITO Y CUENTAS POR COBRAR */
+.credit-sale-panel {
+    display: grid;
+    gap: 0.85rem;
+    margin-bottom: 1rem;
+    padding: 1rem;
+    background: #ecfdf5;
+    border: 1px solid #a7f3d0;
+    border-radius: 8px;
+}
+
+.credit-sale-panel.oculto { display: none; }
+
+.credit-sale-copy {
+    display: grid;
+    gap: 0.25rem;
+}
+
+.credit-sale-copy span {
+    color: #4b5563;
+    font-size: 0.8rem;
+    line-height: 1.4;
+}
+
+.credit-sale-summary {
+    margin: 0;
+    color: #065f46;
+    font-weight: 700;
+}
+
+.finance-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.finance-summary-card {
+    display: grid;
+    gap: 0.45rem;
+    min-width: 0;
+    padding: 1.15rem;
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-left: 4px solid #3b82f6;
+    border-radius: 8px;
+}
+
+.finance-summary-card.danger { border-left-color: #ef4444; }
+.finance-summary-card.success { border-left-color: #10b981; }
+.finance-summary-card span { color: #6b7280; font-size: 0.78rem; font-weight: 700; text-transform: uppercase; }
+.finance-summary-card strong { font-size: 1.35rem; overflow-wrap: anywhere; }
+
+.cxc-detail-card { border-left: 4px solid #3b82f6; }
+.cxc-detail-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; }
+.cxc-detail-header h3 { margin: 0.2rem 0 0; }
+.eyebrow { margin: 0; color: #6b7280; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+
+.cxc-detail-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(16rem, 1fr);
+    gap: 1.25rem;
+    margin-top: 1.25rem;
+}
+
+.cxc-account-summary {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.75rem;
+    margin-bottom: 1.25rem;
+}
+
+.cxc-account-summary div {
+    display: grid;
+    gap: 0.3rem;
+    padding: 0.85rem;
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 7px;
+}
+
+.cxc-account-summary span { color: #6b7280; font-size: 0.75rem; }
+.cxc-account-summary strong { font-size: 0.9rem; overflow-wrap: anywhere; }
+
+.cxc-payment-box {
+    align-self: start;
+    padding: 1rem;
+    background: #eef2ff;
+    border-radius: 8px;
+}
+
+.cxc-payment-box h4 { margin-top: 0; }
+.cxc-payment-box .btn-primary { width: 100%; }
+.amount-positive { color: #047857; }
+
+/* DIRECTORIO DE CLIENTES */
+.client-filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 0.75rem;
+    min-width: 0;
+    margin-bottom: 0.75rem;
+    padding: 1rem;
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+}
+
+.client-filters .input-group {
+    flex: 1 1 10rem;
+}
+
+.client-filters .client-search {
+    flex: 2 1 18rem;
+}
+
+.client-refresh {
+    flex: 0 0 auto;
+    margin-bottom: 0.05rem;
+}
+
+.table-summary {
+    min-height: 1.25rem;
+    margin: 0.75rem 0 0;
+    color: #6b7280;
+    font-size: 0.85rem;
+}
+
+.client-contact {
+    display: grid;
+    gap: 0.2rem;
+}
+
+.client-contact small {
+    color: #6b7280;
+}
+
+.table-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+
+.btn-table {
+    border: 0;
+    border-radius: 5px;
+    padding: 0.4rem 0.65rem;
+    font: inherit;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.btn-table-edit {
+    background: #e5e7eb;
+    color: #374151;
+}
+
+.btn-table-edit:hover {
+    background: #d1d5db;
+}
+
+.btn-table-state {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.btn-table-state:hover {
+    background: #fde68a;
+}
+
+/* DISEÑO DEL PUNTO DE VENTA (POS) */
+.pos-layout {
+    display: flex;
+    gap: 2rem;
+    min-width: 0;
+}
+
+.pos-catalogo {
+    flex: 2;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid #e5e7eb;
+    padding-right: 1.5rem;
+}
+
+.pos-input-busqueda {
+    width: 100%;
+    padding: 1rem;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 1rem;
+    margin-bottom: 1.5rem;
+    box-sizing: border-box;
+}
+
+.pos-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 1rem;
+    overflow-y: auto;
+}
+
+.pos-card {
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 1rem;
+    text-align: center;
+    cursor: pointer;
+    transition: 0.2s;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.pos-card:hover {
+    border-color: #10b981;
+    transform: translateY(-2px);
+}
+
+.pos-card h4 {
+    margin: 0 0 0.5rem 0;
+    font-size: 0.95rem;
+    color: #1f2937;
+}
+
+.pos-card p {
+    margin: 0;
+    font-weight: bold;
+    color: #10b981;
+}
+
+.pos-card small {
+    display: block;
+    margin-top: 0.5rem;
+    color: #6b7280;
+    font-size: 0.75rem;
+}
+
+.pos-ticket {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    background: #f9fafb;
+    border-radius: 8px;
+    padding: 1.5rem;
+}
+
+.pos-ticket h3 {
+    margin-top: 0;
+    border-bottom: 1px solid #d1d5db;
+    padding-bottom: 0.5rem;
+}
+
+.pos-lista-carrito {
+    flex: 1;
+    margin-bottom: 1rem;
+}
+
+.carrito-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    min-width: 0;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+/* Controles de cantidad en el Carrito POS */
+.carrito-cantidad-control {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem;
+    margin-top: 0.25rem;
+}
+
+.btn-cant {
+    background-color: #e5e7eb;
+    color: #1f2937;
+    border: none;
+    width: 26px;
+    height: 26px;
+    border-radius: 4px;
+    font-weight: bold;
+    cursor: pointer;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.btn-cant:hover {
+    background-color: #d1d5db;
+}
+
+.input-cant-manual {
+    width: 45px;
+    text-align: center;
+    padding: 2px 4px;
+    border: 1px solid #d1d5db;
+    border-radius: 4px;
+    font-size: 0.85rem;
+}
+
+.carrito-info { min-width: 0; }
+.carrito-info h4 { margin: 0; font-size: 0.9rem; }
+.carrito-info p { margin: 0; font-size: 0.8rem; color: #6b7280; }
+.carrito-precio { flex: 0 0 auto; font-weight: bold; }
+
+.pos-totales {
+    border-top: 2px dashed #d1d5db;
+    padding-top: 1rem;
+}
+
+.pos-btn-cobrar {
+    width: 100%;
+    padding: 1rem;
+    font-size: 1.1rem;
+    background-color: #10b981;
+}
+.pos-btn-cobrar:hover { background-color: #059669; }
+.pos-btn-cancelar { width: 100%; margin-top: 0.5rem; }
+
+#modal-pagos-cxp > div,
+#modal-pagos-cxp > div > div {
+    min-width: 0;
+}
+
+#modal-pagos-cxp > div {
+    flex-wrap: wrap;
+}
+
+@media (max-width: 1180px) {
+    .app-header { position: static; }
+}
+
+@media (max-width: 900px) {
+    .topbar { align-items: flex-start; padding: 1rem; }
+    .session-controls { align-items: flex-end; flex-direction: column; gap: 0.6rem; }
+    .session-controls h1 { font-size: 0.85rem; }
+    .workspace-navigation {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 0.75rem 1rem 1rem;
+}
+
+.area-tabs {
+    width: 100%;
+}
+
+.module-navigation {
+    flex: 1 1 100%;
+    width: 100%;
+    margin-left: 0;
+}
+    .main-content { padding: 1rem; }
+    .module-container { padding: 1.25rem; }
+    .pos-layout { flex-direction: column; }
+    .pos-catalogo { border-right: 0; border-bottom: 1px solid #e5e7eb; padding: 0 0 1.5rem; }
+    #modal-pagos-cxp > div { align-items: stretch !important; flex-direction: column; gap: 1rem !important; }
+    .finance-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .cxc-detail-grid { grid-template-columns: minmax(0, 1fr); }
+    .cxc-account-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 760px) {
+    .area-tab {
+        flex: 1 1 calc(50% - 0.15rem);
+        white-space: normal;
+    }
+
+    .module-navigation {
+    flex-wrap: wrap;
+}
+
+.module-select-wrapper {
+    flex: 1 1 100%;
+    width: 100%;
+    max-width: none;
+    min-width: 0;
+}
+
+.navigation-breadcrumb {
+    width: 100%;
+    margin: 0;
+}
+}
+
+@media (max-width: 600px) {
+    .topbar { flex-direction: column; }
+    .session-controls { width: 100%; align-items: stretch; }
+    .session-controls h1 { line-height: 1.4; }
+    .btn-logout { align-self: flex-start; }
+    .modulo-header { align-items: flex-start; flex-direction: column; gap: 0.75rem; }
+    .card-form { padding: 1rem; }
+    .form-grid { grid-template-columns: minmax(0, 1fr); }
+    .carrito-item { align-items: flex-start; }
+    .client-filters .input-group,
+    .client-filters .client-search,
+    .client-refresh { flex-basis: 100%; width: 100%; }
+    .finance-summary-grid,
+    .cxc-account-summary { grid-template-columns: minmax(0, 1fr); }
+    .cxc-detail-header { flex-direction: column; }
+}

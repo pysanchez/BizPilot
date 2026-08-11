@@ -1,0 +1,1213 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BizPilot | Dashboard</title>
+    <link rel="stylesheet" href="/static/dashboard_style.css?v=cxc-20260809">
+</head>
+<body>
+    <header class="app-header">
+        <div class="topbar">
+            <div class="brand">
+                <h2>BizPilot</h2>
+                <span>Solutions</span>
+            </div>
+
+            <div class="session-controls">
+                <h1>Panel de Control | Empresa ID: <span id="empresa-id">Cargando...</span></h1>
+                <button type="button" class="btn-logout" onclick="cerrarSesion()">Cerrar Sesión</button>
+            </div>
+        </div>
+
+        <nav class="workspace-navigation" aria-label="Áreas y módulos de BizPilot">
+            <div class="area-tabs" aria-label="Áreas principales">
+                <button type="button" class="area-tab" data-area="operacion" aria-pressed="false">Operación</button>
+                <button type="button" class="area-tab" data-area="finanzas" aria-pressed="false">Finanzas</button>
+                <button type="button" class="area-tab" data-area="crm" aria-pressed="false">CRM</button>
+                <button type="button" class="area-tab" data-area="rrhh" aria-pressed="false">RR. HH.</button>
+                <button type="button" class="area-tab" data-area="copilot" aria-pressed="false">CoPilot</button>
+            </div>
+
+            <div class="module-navigation">
+                <div class="module-select-wrapper">
+                    <label class="module-select-label" for="selector-modulo">Módulo</label>
+                    <select id="selector-modulo" class="module-select" aria-describedby="ruta-navegacion"></select>
+                </div>
+
+                <p id="ruta-navegacion" class="navigation-breadcrumb" aria-live="polite">
+                    <span id="area-actual">Operación</span>
+                    <span aria-hidden="true">/</span>
+                    <strong id="modulo-actual">Punto de venta</strong>
+                </p>
+            </div>
+        </nav>
+    </header>
+
+    <main class="main-content">
+
+        <div id="vista-bienvenida" class="module-container">
+            <h2>Resumen General</h2>
+            <p>Selecciona un módulo en las pestañas superiores para comenzar.</p>
+        </div>
+
+        <div id="vista-inventario" class="module-container oculto">
+            <div class="modulo-header">
+                <h2>Inventario y Almacen</h2>
+                <button class="btn-secondary" onclick="obtenerProductosAPI()">Actualizar Stock</button>
+            </div>
+
+            <div class="tabla-container">
+                <table class="tabla-custom">
+                    <thead>
+                        <tr>
+                            <th>SKU</th>
+                            <th>Producto</th>
+                            <th>Proveedor</th>
+                            <th>Categoria</th>
+                            <th>P. Compra</th>
+                            <th>P. Venta</th>
+                            <th>Stock</th>
+                            <th>Estado</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabla-productos-body">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div id="vista-ventas" class="module-container oculto">
+            <div class="modulo-header">
+                <h2>Punto de Venta</h2>
+            </div>
+            
+            <div class="pos-layout">
+                <div class="pos-catalogo">
+                    <input type="text" id="pos-buscador" class="pos-input-busqueda" placeholder="Buscar por nombre o SKU..." onkeyup="filtrarPOS()">
+                    <div class="pos-grid" id="pos-grid-productos"></div>
+                </div>
+
+                <div class="pos-ticket">
+                    <h3>Ticket Actual</h3>
+                    <div class="input-group" style="margin-bottom: 0.75rem;">
+                        <label>Cliente</label>
+                        <select id="pos-cliente" onchange="actualizarCondicionesVenta()">
+                            <option value="">Público general</option>
+                        </select>
+                    </div>
+                    <div class="input-group" style="margin-bottom: 0.75rem;">
+                        <label>Condición de venta</label>
+                        <select id="pos-tipo-venta" onchange="actualizarCondicionesVenta()">
+                            <option value="Contado">Contado</option>
+                            <option value="Credito">A crédito (CxC)</option>
+                        </select>
+                    </div>
+                    <div class="input-group" style="margin-bottom: 1rem;">
+                        <label id="pos-metodo-pago-label">Método de pago</label>
+                        <select id="pos-metodo-pago" style="width: 100%; padding: 0.6rem; border: 1px solid #d1d5db; border-radius: 8px;" onchange="toggleCambio()">
+                            <option value="Efectivo">Efectivo</option>
+                            <option value="Tarjeta">Tarjeta</option>
+                            <option value="Transferencia">Transferencia</option>
+                        </select>
+                    </div>
+
+                    <div id="zona-credito-venta" class="credit-sale-panel oculto">
+                        <div class="credit-sale-copy">
+                            <strong id="pos-credito-cliente">Selecciona un cliente con crédito autorizado</strong>
+                            <span id="pos-credito-condiciones">El plazo y el límite se toman del directorio de clientes.</span>
+                        </div>
+                        <div class="input-group" style="margin-bottom: 0;">
+                            <label for="pos-abono-inicial">Abono inicial</label>
+                            <input type="number" id="pos-abono-inicial" min="0" step="0.01" value="0" oninput="actualizarResumenCreditoVenta()">
+                        </div>
+                        <p id="pos-credito-resumen" class="credit-sale-summary">Saldo por cobrar: $0.00</p>
+                    </div>
+                    
+                    <div class="pos-lista-carrito" id="pos-lista-carrito">
+                        <p style="text-align:center; color:#9ca3af; margin-top:2rem;">El carrito esta vacio</p>
+                    </div>
+                    
+                    <div class="pos-totales">
+                        <h2>Total: $<span id="pos-total-monto">0.00</span></h2>
+                        
+                        <div id="zona-cambio" style="margin-bottom: 1rem; padding: 1rem; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px;">
+                            <label style="font-size: 0.85rem; font-weight: 600; display: block; margin-bottom: 0.5rem;">Efectivo Recibido:</label>
+                            <input type="number" id="pos-efectivo-recibido" style="width: 100%; padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 6px; box-sizing: border-box; font-size: 1.1rem;" placeholder="0.00" oninput="calcularCambio()">
+                            <h3 style="margin-top: 0.75rem; margin-bottom: 0; color: #10b981; display: flex; justify-content: space-between;">
+                                <span>Cambio:</span> 
+                                <span>$<span id="pos-cambio-monto">0.00</span></span>
+                            </h3>
+                        </div>
+
+                        <button class="btn-primary pos-btn-cobrar" onclick="procesarVenta()">Vender</button>
+                        <button class="btn-secondary pos-btn-cancelar" onclick="limpiarCarrito()">Cancelar Venta</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="vista-historial-ventas" class="module-container oculto">
+            <div class="modulo-header">
+                <h2>Historial de Ventas</h2>
+                <button class="btn-secondary" onclick="obtenerHistorialVentasAPI()">Actualizar Lista</button>
+            </div>
+            <div class="tabla-container">
+                <table class="tabla-custom">
+                    <thead>
+                        <tr>
+                            <th>ID Ticket</th>
+                            <th>Fecha y Hora</th>
+                            <th>Cliente</th>
+                            <th>Total de Venta</th>
+                            <th>Estado</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabla-historial-body"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div id="vista-proveedores" class="module-container oculto">
+            <div class="modulo-header">
+                <h2>Directorio de Proveedores</h2>
+                <button class="btn-primary" onclick="mostrarFormularioProveedor()">+ Nuevo Proveedor</button>
+            </div>
+
+            <div id="form-proveedor-container" class="card-form oculto">
+                <h3>Registrar Proveedor</h3>
+                <form id="formProveedor" onsubmit="guardarProveedor(event)">
+                    <div class="form-grid">
+                        <div class="input-group">
+                            <label>Nombre Proveedor / Empresa</label>
+                            <input type="text" id="prov-nombre" required>
+                        </div>
+                        <div class="input-group">
+                            <label>Nombre del Contacto</label>
+                            <input type="text" id="prov-contacto">
+                        </div>
+                        <div class="input-group">
+                            <label>Telefono</label>
+                            <input type="text" id="prov-telefono">
+                        </div>
+                        <div class="input-group">
+                            <label>Correo Electronico</label>
+                            <input type="email" id="prov-email">
+                        </div>
+                        <div class="input-group">
+                            <label>¿Autoriza Compras a Crédito?</label>
+                            <select id="prov-credito" style="width: 100%; padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 8px;">
+                                <option value="false">No (Solo Contado)</option>
+                                <option value="true">Sí (Línea de Crédito activa)</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" class="btn-primary">Guardar Proveedor</button>
+                        <button type="button" class="btn-secondary" onclick="ocultarFormularioProveedor()">Cancelar</button>
+                    </div>
+                </form>
+            </div>
+
+            <div class="tabla-container">
+                <table class="tabla-custom">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Empresa / Proveedor</th>
+                            <th>Contacto</th>
+                            <th>Telefono</th>
+                            <th>Email</th>
+                            <th>Condición</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabla-proveedores-body"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div id="vista-nueva-compra" class="module-container oculto">
+            <div class="modulo-header">
+                <h2>Registrar Compra y Entrada a Almacén</h2>
+                <button class="btn-secondary" onclick="toggleFormNuevoProductoCompra()">+ Crear Producto Nuevo en Compra</button>
+            </div>
+            
+            <div id="form-nuevo-prod-compra" class="card-form oculto">
+                <h3>Datos del Producto Nuevo a Registrar</h3>
+                <div class="form-grid">
+                    <div class="input-group">
+                        <label>SKU / Código</label>
+                        <input type="text" id="nuevo-compra-sku">
+                    </div>
+                    <div class="input-group">
+                        <label>Nombre del Producto</label>
+                        <input type="text" id="nuevo-compra-nombre">
+                    </div>
+                    <div class="input-group">
+                        <label>Categoría</label>
+                        <input type="text" id="nuevo-compra-categoria">
+                    </div>
+                    <div class="input-group">
+                        <label>Precio Compra (Costo)</label>
+                        <input type="number" step="0.01" id="nuevo-compra-costo">
+                    </div>
+                    <div class="input-group">
+                        <label>Precio Venta Sugerido</label>
+                        <input type="number" step="0.01" id="nuevo-compra-venta">
+                    </div>
+                    <div class="input-group">
+                        <label>Cantidad Comprada</label>
+                        <input type="number" id="nuevo-compra-cantidad" value="1">
+                    </div>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn-primary" onclick="agregarNuevoProductoACompra()">Agregar a la Orden</button>
+                    <button type="button" class="btn-secondary" onclick="toggleFormNuevoProductoCompra()">Cancelar</button>
+                </div>
+            </div>
+
+            <div class="pos-layout">
+                <div class="pos-catalogo">
+                    <div class="input-group" style="margin-bottom: 1rem;">
+                        <label>1. Selecciona el Proveedor</label>
+                        <select id="compra-proveedor" class="pos-input-busqueda" style="margin-bottom: 0;">
+                            <option value="">Cargando proveedores...</option>
+                        </select>
+                    </div>
+
+                    <label style="font-size: 0.85rem; font-weight: 600; color: #374151;">2. O Selecciona un Producto Existente para Reabastecer</label>
+                    <input type="text" id="compra-buscador" class="pos-input-busqueda" placeholder="Buscar por nombre o SKU..." onkeyup="filtrarCompraProductos()" style="margin-top: 0.5rem;">
+                    
+                    <div class="pos-grid" id="compra-grid-productos"></div>
+                </div>
+
+                <div class="pos-ticket">
+                    <h3>Orden de Compra</h3>
+                    
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.75rem; margin-bottom: 1rem; background: #ffffff; padding: 0.75rem; border-radius: 8px; border: 1px solid #e5e7eb;">
+                        <div class="input-group" style="margin-bottom: 0;">
+                            <label>Forma de Pago</label>
+                            <select id="compra-tipo" style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 6px;" onchange="toggleCamposCreditoCompra()">
+                                <option value="Contado">Contado</option>
+                                <option value="Credito">A Crédito (CXP)</option>
+                            </select>
+                        </div>
+                        
+                        <div class="input-group" style="margin-bottom: 0;">
+                            <label>Medio de Pago</label>
+                            <select id="compra-medio-pago" style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 6px;">
+                                <option value="Transferencia">Transferencia</option>
+                                <option value="Efectivo">Efectivo</option>
+                                <option value="Tarjeta">Tarjeta</option>
+                            </select>
+                        </div>
+
+                        <div class="input-group div-credito-compra oculto" style="margin-bottom: 0;">
+                            <label>Plazo (Días)</label>
+                            <input type="number" id="compra-dias-credito" style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 6px; box-sizing: border-box;" placeholder="30" value="30">
+                        </div>
+
+                        <div class="input-group div-credito-compra oculto" style="margin-bottom: 0;">
+                            <label>Abono Inicial ($)</label>
+                            <input type="number" step="0.01" id="compra-monto-pagado" style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 6px; box-sizing: border-box;" placeholder="0.00" value="0.00">
+                        </div>
+                    </div>
+
+                    <div class="pos-lista-carrito" id="compra-lista-carrito">
+                        <p style="text-align:center; color:#9ca3af; margin-top:2rem;">La orden está vacía</p>
+                    </div>
+                    <div class="pos-totales">
+                        <h2>Total a Pagar: $<span id="compra-total-monto">0.00</span></h2>
+                        <button class="btn-primary pos-btn-cobrar" onclick="procesarOrdenCompra()">Confirmar Entrada a Almacén</button>
+                        <button class="btn-secondary pos-btn-cancelar" onclick="limpiarCarritoCompra()">Cancelar Orden</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="vista-fin-resumen" class="module-container oculto">
+            <div class="modulo-header">
+                <h2>Dashboard Financiero</h2>
+            </div>
+            <p>Dashboard financiero en construcción...</p>
+        </div>
+
+                <div id="vista-fin-gastos" class="module-container oculto">
+            <div class="modulo-header">
+                <div>
+                    <h2>Gastos</h2>
+                    <p>Salidas de Compras, CxP y gastos operativos.</p>
+                </div>
+            
+                <button
+                    type="button"
+                    class="btn-primary"
+                    onclick="mostrarFormularioGasto()"
+                >
+                    + Registrar gasto
+                </button>
+            </div>
+        
+            <div
+                id="form-gasto-container"
+                class="card-form oculto"
+            >
+                <h3>Registrar gasto operativo</h3>
+        
+                <form
+                    id="form-gasto"
+                    onsubmit="guardarGastoManual(event)"
+                >
+                    <div class="form-grid">
+                        <div class="input-group">
+                            <label for="gasto-categoria">
+                                Categoría
+                            </label>
+                        
+                            <select
+                                id="gasto-categoria"
+                                required
+                            >
+                                <option value="">
+                                    Selecciona una categoría
+                                </option>
+                                <option value="Agua">Agua</option>
+                                <option value="Luz">Luz</option>
+                                <option value="Gas">Gas</option>
+                                <option value="Renta">Renta</option>
+                                <option value="Internet y telefonía">
+                                    Internet y telefonía
+                                </option>
+                                <option value="Nómina">Nómina</option>
+                                <option value="Transporte y gasolina">
+                                    Transporte y gasolina
+                                </option>
+                                <option value="Mantenimiento">
+                                    Mantenimiento
+                                </option>
+                                <option value="Papelería e insumos">
+                                    Papelería e insumos
+                                </option>
+                                <option value="Marketing">
+                                    Marketing
+                                </option>
+                                <option value="Impuestos">
+                                    Impuestos
+                                </option>
+                                <option value="Comisiones bancarias">
+                                    Comisiones bancarias
+                                </option>
+                                <option value="Imprevistos">
+                                    Imprevistos
+                                </option>
+                                <option value="Otros">Otros</option>
+                            </select>
+                        </div>
+                    
+                        <div class="input-group">
+                            <label for="gasto-tipo">
+                                Tipo de gasto
+                            </label>
+                        
+                            <select id="gasto-tipo" required>
+                                <option value="">
+                                    Selecciona el tipo
+                                </option>
+                                <option value="Fijo">Fijo</option>
+                                <option value="Variable">Variable</option>
+                            </select>
+                        </div>
+                    
+                        <div class="input-group">
+                            <label for="gasto-concepto">
+                                Concepto
+                            </label>
+                        
+                            <input
+                                type="text"
+                                id="gasto-concepto"
+                                minlength="2"
+                                maxlength="120"
+                                placeholder="Ej. Recibo de luz de agosto"
+                                required
+                            >
+                        </div>
+                    
+                        <div class="input-group">
+                            <label for="gasto-monto">
+                                Monto
+                            </label>
+                        
+                            <input
+                                type="number"
+                                id="gasto-monto"
+                                min="0.01"
+                                step="0.01"
+                                required
+                            >
+                        </div>
+                    
+                        <div class="input-group">
+                            <label for="gasto-fecha">
+                                Fecha del gasto
+                            </label>
+                        
+                            <input
+                                type="date"
+                                id="gasto-fecha"
+                                required
+                            >
+                        </div>
+                    
+                        <div class="input-group">
+                            <label for="gasto-metodo">
+                                Método de pago
+                            </label>
+                        
+                            <select id="gasto-metodo" required>
+                                <option value="Efectivo">Efectivo</option>
+                                <option value="Transferencia">
+                                    Transferencia
+                                </option>
+                                <option value="Tarjeta">Tarjeta</option>
+                                <option value="Deposito">Depósito</option>
+                                <option value="Otro">Otro</option>
+                            </select>
+                        </div>
+                    
+                        <div class="input-group">
+                            <label for="gasto-referencia">
+                                Referencia
+                            </label>
+                        
+                            <input
+                                type="text"
+                                id="gasto-referencia"
+                                maxlength="80"
+                                placeholder="Folio, transferencia, recibo..."
+                            >
+                        </div>
+                    
+                        <div class="input-group">
+                            <label for="gasto-notas">
+                                Notas
+                            </label>
+                        
+                            <textarea
+                                id="gasto-notas"
+                                maxlength="250"
+                                rows="3"
+                                placeholder="Información adicional"
+                            ></textarea>
+                        </div>
+                    </div>
+                
+                    <div class="form-actions">
+                        <button
+                            type="submit"
+                            class="btn-primary"
+                        >
+                            Guardar gasto
+                        </button>
+                    
+                        <button
+                            type="button"
+                            class="btn-secondary"
+                            onclick="ocultarFormularioGasto()"
+                        >
+                            Cancelar
+                        </button>
+                    </div>
+                </form>
+            </div>
+        
+            <div
+                class="finance-summary-grid"
+                aria-label="Resumen de gastos"
+            >
+                <article class="finance-summary-card">
+                    <span>Total de salidas</span>
+                    <strong id="gastos-resumen-total">$0.00</strong>
+                </article>
+            
+                <article class="finance-summary-card">
+                    <span>Compras y CxP</span>
+                    <strong id="gastos-resumen-compras">$0.00</strong>
+                </article>
+            
+                <article class="finance-summary-card">
+                    <span>Gastos operativos</span>
+                    <strong id="gastos-resumen-operativos">$0.00</strong>
+                </article>
+            
+                <article class="finance-summary-card">
+                    <span>Movimientos</span>
+                    <strong id="gastos-resumen-movimientos">0</strong>
+                </article>
+            </div>
+        
+            <div
+                class="client-filters"
+                aria-label="Filtros de gastos"
+            >
+                <div class="input-group">
+                    <label for="gastos-fecha-inicio">Desde</label>
+                    <input
+                        type="date"
+                        id="gastos-fecha-inicio"
+                        onchange="filtrarGastos()"
+                    >
+                </div>
+            
+                <div class="input-group">
+                    <label for="gastos-fecha-fin">Hasta</label>
+                    <input
+                        type="date"
+                        id="gastos-fecha-fin"
+                        onchange="filtrarGastos()"
+                    >
+                </div>
+            
+                <div class="input-group">
+                    <label for="gastos-filtro-origen">Origen</label>
+                    <select
+                        id="gastos-filtro-origen"
+                        onchange="filtrarGastos()"
+                    >
+                        <option value="todos">Todos</option>
+                        <option value="Compras">Compras</option>
+                        <option value="CxP">Cuentas por pagar</option>
+                        <option value="Manual">Captura manual</option>
+                    </select>
+                </div>
+            
+                <div class="input-group">
+                    <label for="gastos-filtro-tipo">Tipo</label>
+                    <select
+                        id="gastos-filtro-tipo"
+                        onchange="filtrarGastos()"
+                    >
+                        <option value="todos">Todos</option>
+                        <option value="Fijo">Fijo</option>
+                        <option value="Variable">Variable</option>
+                    </select>
+                </div>
+            
+                <div class="input-group">
+                    <label for="gastos-filtro-categoria">
+                        Categoría
+                    </label>
+                
+                    <select
+                        id="gastos-filtro-categoria"
+                        onchange="filtrarGastos()"
+                    >
+                        <option value="todos">Todas</option>
+                    </select>
+                </div>
+            
+                <div class="input-group">
+                    <label for="gastos-filtro-metodo">Método</label>
+                    <select
+                        id="gastos-filtro-metodo"
+                        onchange="filtrarGastos()"
+                    >
+                        <option value="todos">Todos</option>
+                    </select>
+                </div>
+            
+                <div class="input-group client-search">
+                    <label for="gastos-busqueda">Buscar</label>
+                    <input
+                        type="search"
+                        id="gastos-busqueda"
+                        placeholder="Concepto, folio o notas"
+                        oninput="filtrarGastos()"
+                    >
+                </div>
+            
+                <button
+                    type="button"
+                    class="btn-secondary client-refresh"
+                    onclick="restablecerFiltrosGastos()"
+                >
+                    Este mes
+                </button>
+            </div>
+        
+            <p
+                id="gastos-resumen-registros"
+                class="table-summary"
+                aria-live="polite"
+            ></p>
+        
+            <div class="tabla-container">
+                <table class="tabla-custom">
+                    <thead>
+                        <tr>
+                            <th>Fecha</th>
+                            <th>Origen</th>
+                            <th>Tipo</th>
+                            <th>Categoría</th>
+                            <th>Concepto</th>
+                            <th>Folio / referencia</th>
+                            <th>Método</th>
+                            <th>Notas</th>
+                            <th>Monto</th>
+                            <th>Acción</th>
+                        </tr>
+                    </thead>
+                
+                    <tbody id="tabla-gastos-body"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div id="vista-fin-ingresos" class="module-container oculto">
+            <div class="modulo-header">
+                <h2>Ingresos y Cobros</h2>
+                <button
+                    type="button"
+                    class="btn-secondary"
+                    onclick="obtenerIngresosAPI()"
+                >
+                    Actualizar movimientos
+                </button>
+            </div>
+        
+            <div
+                class="finance-summary-grid"
+                aria-label="Resumen de ingresos y cobros"
+            >
+                <article class="finance-summary-card success">
+                    <span>Total filtrado</span>
+                    <strong id="ingresos-resumen-total">$0.00</strong>
+                </article>
+            
+                <article class="finance-summary-card">
+                    <span>Ventas de contado</span>
+                    <strong id="ingresos-resumen-contado">$0.00</strong>
+                </article>
+            
+                <article class="finance-summary-card">
+                    <span>Cobros de crédito</span>
+                    <strong id="ingresos-resumen-credito">$0.00</strong>
+                </article>
+            
+                <article class="finance-summary-card">
+                    <span>Movimientos</span>
+                    <strong id="ingresos-resumen-movimientos">0</strong>
+                </article>
+            </div>
+        
+            <div
+                class="client-filters"
+                aria-label="Filtros de ingresos y cobros"
+            >
+                <div class="input-group">
+                    <label for="ingresos-fecha-inicio">Desde</label>
+                    <input
+                        type="date"
+                        id="ingresos-fecha-inicio"
+                        onchange="filtrarIngresos()"
+                    >
+                </div>
+            
+                <div class="input-group">
+                    <label for="ingresos-fecha-fin">Hasta</label>
+                    <input
+                        type="date"
+                        id="ingresos-fecha-fin"
+                        onchange="filtrarIngresos()"
+                    >
+                </div>
+            
+                <div class="input-group">
+                    <label for="ingresos-filtro-origen">Origen</label>
+                    <select
+                        id="ingresos-filtro-origen"
+                        onchange="filtrarIngresos()"
+                    >
+                        <option value="todos">Todos</option>
+                        <option value="Contado">Ventas de contado</option>
+                        <option value="Credito">Cobros de crédito</option>
+                    </select>
+                </div>
+            
+                <div class="input-group">
+                    <label for="ingresos-filtro-metodo">Método</label>
+                    <select
+                        id="ingresos-filtro-metodo"
+                        onchange="filtrarIngresos()"
+                    >
+                        <option value="todos">Todos</option>
+                    </select>
+                </div>
+            
+                <div class="input-group client-search">
+                    <label for="ingresos-busqueda">Buscar</label>
+                    <input
+                        type="search"
+                        id="ingresos-busqueda"
+                        placeholder="Folio, cliente o referencia"
+                        oninput="filtrarIngresos()"
+                    >
+                </div>
+            
+                <button
+                    type="button"
+                    class="btn-secondary client-refresh"
+                    onclick="restablecerFiltrosIngresos()"
+                >
+                    Este mes
+                </button>
+            </div>
+        
+            <p
+                id="ingresos-resumen-registros"
+                class="table-summary"
+                aria-live="polite"
+            ></p>
+        
+            <div class="tabla-container">
+                <table class="tabla-custom">
+                    <thead>
+                        <tr>
+                            <th>Fecha</th>
+                            <th>Movimiento</th>
+                            <th>Folio</th>
+                            <th>Cliente</th>
+                            <th>Método</th>
+                            <th>Referencia</th>
+                            <th>Notas</th>
+                            <th>Monto</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabla-ingresos-body"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div id="vista-fin-cxp" class="module-container oculto">
+            <div class="modulo-header">
+                <h2>Cuentas por Pagar (Proveedores)</h2>
+                <button class="btn-secondary" onclick="obtenerCXPAPI()">Actualizar Lista</button>
+            </div>
+
+            <div id="modal-pagos-cxp" class="card-form oculto" style="border-left: 4px solid #3b82f6;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <h3>Detalle y Abonos: Compra #<span id="cxp-detalle-id"></span></h3>
+                    <button class="btn-secondary" onclick="cerrarModalCXP()">Cerrar</button>
+                </div>
+                
+                <div style="display: flex; gap: 2rem; margin-top: 1rem;">
+                    <div style="flex: 2;">
+                        <h4 style="margin-top: 0;">Historial de Pagos</h4>
+                        <table class="tabla-custom">
+                            <thead>
+                                <tr>
+                                    <th>Fecha</th>
+                                    <th>Medio</th>
+                                    <th>Monto</th>
+                                </tr>
+                            </thead>
+                            <tbody id="cxp-historial-body"></tbody>
+                        </table>
+                    </div>
+                    
+                    <div style="flex: 1; background: #f3f4f6; padding: 1rem; border-radius: 8px;" id="caja-nuevo-abono">
+                        <h4 style="margin-top: 0;">Registrar Nuevo Abono</h4>
+                        <div class="input-group">
+                            <label>Monto a Abonar ($)</label>
+                            <input type="number" step="0.01" id="abono-monto" required>
+                        </div>
+                        <div class="input-group">
+                            <label>Medio de Pago</label>
+                            <select id="abono-medio">
+                                <option value="Transferencia">Transferencia</option>
+                                <option value="Efectivo">Efectivo</option>
+                                <option value="Tarjeta">Tarjeta</option>
+                            </select>
+                        </div>
+                        <button class="btn-primary" style="width: 100%; margin-top: 0.5rem;" onclick="procesarAbonoCXP()">Guardar Abono</button>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="tabla-container">
+                <table class="tabla-custom">
+                    <thead>
+                        <tr>
+                            <th>Folio</th>
+                            <th>Proveedor</th>
+                            <th>Plazo</th>
+                            <th>Total Deuda</th>
+                            <th>Pagado</th>
+                            <th>Saldo Pendiente</th>
+                            <th>Estado</th>
+                            <th>Acción</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabla-cxp-body">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div id="vista-clientes" class="module-container oculto">
+            <div class="modulo-header">
+                <h2>Directorio de Clientes</h2>
+                <button type="button" class="btn-primary" onclick="mostrarFormularioCliente()">+ Nuevo Cliente</button>
+            </div>
+
+            <div id="form-cliente-container" class="card-form oculto">
+                <h3 id="form-cliente-titulo">Registrar Cliente</h3>
+                <form id="formCliente" onsubmit="guardarCliente(event)">
+                    <div class="form-grid">
+                        <div class="input-group">
+                            <label for="cliente-nombre">Nombre completo / Razón social</label>
+                            <input type="text" id="cliente-nombre" minlength="2" maxlength="120" required>
+                        </div>
+                        <div class="input-group">
+                            <label for="cliente-telefono">Teléfono</label>
+                            <input type="tel" id="cliente-telefono" minlength="7" maxlength="20" required>
+                        </div>
+                        <div class="input-group">
+                            <label for="cliente-email">Correo electrónico</label>
+                            <input type="email" id="cliente-email" maxlength="254">
+                        </div>
+                        <div class="input-group">
+                            <label for="cliente-rfc">RFC</label>
+                            <input
+                                type="text"
+                                id="cliente-rfc"
+                                minlength="12"
+                                maxlength="13"
+                                pattern="[A-Za-zÑñ&amp;]{3,4}[0-9]{6}[A-Za-z0-9]{3}"
+                                placeholder="XAXX010101000"
+                            >
+                        </div>
+                        <div class="input-group">
+                            <label for="cliente-tipo">Tipo de cliente</label>
+                            <select id="cliente-tipo">
+                                <option value="Minorista">Minorista</option>
+                                <option value="Mayorista">Mayorista</option>
+                                <option value="Empresa">Empresa</option>
+                            </select>
+                        </div>
+                        <div class="input-group">
+                            <label for="cliente-limite-credito">Límite de crédito</label>
+                            <input type="number" id="cliente-limite-credito" min="0" step="0.01" value="0">
+                        </div>
+                        <div class="input-group">
+                            <label for="cliente-dias-credito">Días de crédito</label>
+                            <select id="cliente-dias-credito">
+                                <option value="0">Sin crédito</option>
+                                <option value="15">15 días</option>
+                                <option value="30">30 días</option>
+                                <option value="45">45 días</option>
+                                <option value="60">60 días</option>
+                                <option value="90">90 días</option>
+                            </select>
+                        </div>
+                        <div class="input-group">
+                            <label for="cliente-activo">Estado</label>
+                            <select id="cliente-activo">
+                                <option value="true">Activo</option>
+                                <option value="false">Inactivo</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" id="btn-guardar-cliente" class="btn-primary">Guardar Cliente</button>
+                        <button type="button" class="btn-secondary" onclick="ocultarFormularioCliente()">Cancelar</button>
+                    </div>
+                </form>
+            </div>
+
+            <div class="client-filters" aria-label="Filtros de clientes">
+                <div class="input-group client-search">
+                    <label for="cliente-busqueda">Buscar</label>
+                    <input
+                        type="search"
+                        id="cliente-busqueda"
+                        placeholder="Nombre, teléfono, correo o RFC"
+                        oninput="filtrarClientes()"
+                    >
+                </div>
+                <div class="input-group">
+                    <label for="cliente-filtro-tipo">Tipo</label>
+                    <select id="cliente-filtro-tipo" onchange="filtrarClientes()">
+                        <option value="todos">Todos</option>
+                        <option value="Minorista">Minorista</option>
+                        <option value="Mayorista">Mayorista</option>
+                        <option value="Empresa">Empresa</option>
+                    </select>
+                </div>
+                <div class="input-group">
+                    <label for="cliente-filtro-estado">Estado</label>
+                    <select id="cliente-filtro-estado" onchange="filtrarClientes()">
+                        <option value="todos">Todos</option>
+                        <option value="activos">Activos</option>
+                        <option value="inactivos">Inactivos</option>
+                    </select>
+                </div>
+                <button type="button" class="btn-secondary client-refresh" onclick="obtenerClientesAPI()">Actualizar</button>
+            </div>
+
+            <p id="clientes-resumen" class="table-summary" aria-live="polite"></p>
+
+            <div class="tabla-container">
+                <table class="tabla-custom">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Cliente</th>
+                            <th>Contacto</th>
+                            <th>RFC</th>
+                            <th>Tipo</th>
+                            <th>Crédito</th>
+                            <th>Estado</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabla-clientes-body"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div id="vista-fin-cxc" class="module-container oculto">
+            <div class="modulo-header">
+                <h2>Cuentas por Cobrar</h2>
+                <button type="button" class="btn-secondary" onclick="obtenerCXCAPI()">Actualizar cartera</button>
+            </div>
+
+            <div class="finance-summary-grid" aria-label="Resumen de cuentas por cobrar">
+                <article class="finance-summary-card">
+                    <span>Cartera pendiente</span>
+                    <strong id="cxc-resumen-pendiente">$0.00</strong>
+                </article>
+                <article class="finance-summary-card danger">
+                    <span>Saldo vencido</span>
+                    <strong id="cxc-resumen-vencido">$0.00</strong>
+                </article>
+                <article class="finance-summary-card">
+                    <span>Por vencer</span>
+                    <strong id="cxc-resumen-por-vencer">$0.00</strong>
+                </article>
+                <article class="finance-summary-card success">
+                    <span>Cobrado en la cartera</span>
+                    <strong id="cxc-resumen-cobrado">$0.00</strong>
+                </article>
+            </div>
+
+            <div id="modal-pagos-cxc" class="card-form oculto cxc-detail-card">
+                <div class="cxc-detail-header">
+                    <div>
+                        <p class="eyebrow">Venta a crédito</p>
+                        <h3>Cuenta #<span id="cxc-detalle-id"></span> · <span id="cxc-detalle-cliente"></span></h3>
+                    </div>
+                    <button type="button" class="btn-secondary" onclick="cerrarModalCXC()">Cerrar</button>
+                </div>
+
+                <div class="cxc-detail-grid">
+                    <section>
+                        <div id="cxc-detalle-resumen" class="cxc-account-summary"></div>
+                        <h4>Historial de cobros</h4>
+                        <div class="tabla-container">
+                            <table class="tabla-custom">
+                                <thead>
+                                    <tr>
+                                        <th>Fecha</th>
+                                        <th>Método</th>
+                                        <th>Referencia</th>
+                                        <th>Monto</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="cxc-historial-body"></tbody>
+                            </table>
+                        </div>
+                    </section>
+
+                    <aside id="caja-nuevo-abono-cxc" class="cxc-payment-box">
+                        <h4>Registrar cobro</h4>
+                        <div class="input-group">
+                            <label for="cxc-abono-monto">Monto</label>
+                            <input type="number" id="cxc-abono-monto" min="0.01" step="0.01">
+                        </div>
+                        <div class="input-group">
+                            <label for="cxc-abono-metodo">Método de pago</label>
+                            <select id="cxc-abono-metodo">
+                                <option value="Transferencia">Transferencia</option>
+                                <option value="Efectivo">Efectivo</option>
+                                <option value="Tarjeta">Tarjeta</option>
+                                <option value="Deposito">Depósito</option>
+                            </select>
+                        </div>
+                        <div class="input-group">
+                            <label for="cxc-abono-referencia">Referencia (opcional)</label>
+                            <input type="text" id="cxc-abono-referencia" maxlength="80">
+                        </div>
+                        <div class="input-group">
+                            <label for="cxc-abono-notas">Notas (opcional)</label>
+                            <input type="text" id="cxc-abono-notas" maxlength="200">
+                        </div>
+                        <button type="button" class="btn-primary" onclick="procesarAbonoCXC()">Guardar cobro</button>
+                    </aside>
+                </div>
+            </div>
+
+            <div class="client-filters" aria-label="Filtros de cuentas por cobrar">
+                <div class="input-group client-search">
+                    <label for="cxc-busqueda">Buscar</label>
+                    <input type="search" id="cxc-busqueda" placeholder="Folio o cliente" oninput="filtrarCXC()">
+                </div>
+                <div class="input-group">
+                    <label for="cxc-filtro-estado">Estado</label>
+                    <select id="cxc-filtro-estado" onchange="filtrarCXC()">
+                        <option value="todos">Todos</option>
+                        <option value="pendiente">Pendientes</option>
+                        <option value="vencido">Vencidas</option>
+                        <option value="pagado">Pagadas</option>
+                    </select>
+                </div>
+                <div class="input-group">
+                    <label for="cxc-filtro-cliente">Cliente</label>
+                    <select id="cxc-filtro-cliente" onchange="filtrarCXC()">
+                        <option value="todos">Todos</option>
+                    </select>
+                </div>
+            </div>
+
+            <p id="cxc-resumen-registros" class="table-summary" aria-live="polite"></p>
+
+            <div class="tabla-container">
+                <table class="tabla-custom">
+                    <thead>
+                        <tr>
+                            <th>Folio</th>
+                            <th>Cliente</th>
+                            <th>Venta</th>
+                            <th>Vencimiento</th>
+                            <th>Total</th>
+                            <th>Cobrado</th>
+                            <th>Saldo</th>
+                            <th>Estado</th>
+                            <th>Acción</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabla-cxc-body"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div id="vista-crm-dashboard" class="module-container oculto">
+            <div class="modulo-header">
+                <h2>Dashboard Comercial</h2>
+            </div>
+            <p>Indicadores de prospectos, oportunidades y cierres en construcción...</p>
+        </div>
+
+        <div id="vista-crm-prospectos" class="module-container oculto">
+            <div class="modulo-header">
+                <h2>Prospectos</h2>
+            </div>
+            <p>Registro y calificación de prospectos en construcción...</p>
+        </div>
+
+        <div id="vista-crm-embudo" class="module-container oculto">
+            <div class="modulo-header">
+                <h2>Embudo de Ventas</h2>
+            </div>
+            <p>Etapas comerciales y movimiento de oportunidades en construcción...</p>
+        </div>
+
+        <div id="vista-crm-negociaciones" class="module-container oculto">
+            <div class="modulo-header">
+                <h2>Negociaciones</h2>
+            </div>
+            <p>Importes, probabilidades y fechas estimadas de cierre en construcción...</p>
+        </div>
+
+        <div id="vista-crm-seguimientos" class="module-container oculto">
+            <div class="modulo-header">
+                <h2>Seguimientos</h2>
+            </div>
+            <p>Llamadas, reuniones, tareas y próximos contactos en construcción...</p>
+        </div>
+
+        <div id="vista-crm-cotizaciones" class="module-container oculto">
+            <div class="modulo-header">
+                <h2>Cotizaciones</h2>
+            </div>
+            <p>Creación y seguimiento de propuestas comerciales en construcción...</p>
+        </div>
+
+        <div id="vista-rrhh-empleados" class="module-container oculto">
+            <div class="modulo-header">
+                <h2>Empleados</h2>
+            </div>
+            <p>Expediente laboral y datos del personal en construcción...</p>
+        </div>
+
+        <div id="vista-rrhh-asistencias" class="module-container oculto">
+            <div class="modulo-header">
+                <h2>Asistencias</h2>
+            </div>
+            <p>Entradas, salidas, faltas, retardos y horas extra en construcción...</p>
+        </div>
+
+        <div id="vista-rrhh-vacaciones" class="module-container oculto">
+            <div class="modulo-header">
+                <h2>Vacaciones y Permisos</h2>
+            </div>
+            <p>Solicitudes, autorizaciones y saldos disponibles en construcción...</p>
+        </div>
+
+        <div id="vista-rrhh-incidencias" class="module-container oculto">
+            <div class="modulo-header">
+                <h2>Incidencias</h2>
+            </div>
+            <p>Faltas, incapacidades y salidas anticipadas en construcción...</p>
+        </div>
+
+        <div id="vista-rrhh-accidentes" class="module-container oculto">
+            <div class="modulo-header">
+                <h2>Accidentes Laborales</h2>
+            </div>
+            <p>Registro, investigación y seguimiento de accidentes en construcción...</p>
+        </div>
+
+        <div id="vista-rrhh-avisos" class="module-container oculto">
+            <div class="modulo-header">
+                <h2>Avisos Internos</h2>
+            </div>
+            <p>Comunicados, destinatarios y confirmaciones de lectura en construcción...</p>
+        </div>
+
+        <div id="vista-rrhh-medidas" class="module-container oculto">
+            <div class="modulo-header">
+                <h2>Medidas Disciplinarias</h2>
+            </div>
+            <p>Registro controlado de llamadas de atención y seguimientos en construcción...</p>
+        </div>
+
+        <div id="vista-rrhh-documentos" class="module-container oculto">
+            <div class="modulo-header">
+                <h2>Documentos del Empleado</h2>
+            </div>
+            <p>Expedientes, permisos de acceso y vigencias documentales en construcción...</p>
+        </div>
+
+        <div id="vista-ia-copilot" class="module-container oculto">
+            <div class="modulo-header">
+                <h2>BizPilot CoPilot</h2>
+            </div>
+            <p>Asistente inteligente en construcción...</p>
+        </div>
+
+    </main>
+
+<script src="/static/dashboard.js?v=gastos-20260810"></script>
+</body>
+</html>

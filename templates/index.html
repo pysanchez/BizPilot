@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BizPilot | Iniciar Sesion</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-header">
+            <h2>BizPilot</h2>
+            <p>Ingresa al panel de tu empresa</p>
+        </div>
+        
+        <form id="loginForm" onsubmit="iniciarSesion(event)">
+            <div class="input-group">
+                <label for="usuario">Usuario</label>
+                <input type="text" id="usuario" placeholder="ej. admin" required>
+            </div>
+            
+            <div class="input-group">
+                <label for="password">Contrasena</label>
+                <input type="password" id="password" placeholder="••••••••" required>
+            </div>
+            
+            <button type="submit" id="btn-login">Ingresar al Sistema</button>
+        </form>
+
+        <div id="mensaje-error" class="oculto"></div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
