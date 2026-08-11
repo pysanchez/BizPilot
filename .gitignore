@@ -1,0 +1,14 @@
+# Variables y secretos
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Archivos locales
+.vscode/
+.DS_Store
