@@ -22,7 +22,8 @@ const configuracionAreas = {
             'fin-ingresos',
             'fin-gastos',
             'fin-cxp',
-            'fin-cxc'
+            'fin-cxc',
+            'fin-comprobantes'
         ]
     },
     crm: {
@@ -66,11 +67,12 @@ const configuracionModulos = {
     'erp-proveedores': { nombre: 'Proveedores', area: 'operacion', vistaId: 'vista-proveedores', alCargar: obtenerProveedoresAPI },
     'erp-clientes': { nombre: 'Clientes', area: 'operacion', vistaId: 'vista-clientes', alCargar: obtenerClientesAPI },
 
-    'fin-resumen': {nombre: 'Dashboard financiero',area: 'finanzas',vistaId: 'vista-fin-resumen'},
-    'fin-ingresos': {nombre: 'Ingresos y cobros',area: 'finanzas',vistaId: 'vista-fin-ingresos',alCargar: obtenerIngresosAPI},
-    'fin-gastos': {nombre: 'Gastos',area: 'finanzas',vistaId: 'vista-fin-gastos', alCargar: obtenerGastosAPI},
-    'fin-cxp': {nombre: 'Cuentas por pagar',area: 'finanzas',vistaId: 'vista-fin-cxp',alCargar: obtenerCXPAPI},
-    'fin-cxc': {nombre: 'Cuentas por cobrar',area: 'finanzas',vistaId: 'vista-fin-cxc',alCargar: obtenerCXCAPI},
+    'fin-resumen': { nombre: 'Dashboard financiero', area: 'finanzas', vistaId: 'vista-fin-resumen' },
+    'fin-ingresos': { nombre: 'Ingresos y cobros', area: 'finanzas', vistaId: 'vista-fin-ingresos' },
+    'fin-gastos': { nombre: 'Gastos', area: 'finanzas', vistaId: 'vista-fin-gastos', alCargar: obtenerGastosAPI },
+    'fin-cxp': { nombre: 'Cuentas por pagar', area: 'finanzas', vistaId: 'vista-fin-cxp', alCargar: obtenerCXPAPI },
+    'fin-cxc': { nombre: 'Cuentas por cobrar', area: 'finanzas', vistaId: 'vista-fin-cxc', alCargar: obtenerCXCAPI },
+    'fin-comprobantes': { nombre: 'Facturas y comprobantes', area: 'finanzas', vistaId: 'vista-fin-comprobantes' },
 
     'crm-dashboard': { nombre: 'Dashboard comercial', area: 'crm', vistaId: 'vista-crm-dashboard' },
     'crm-prospectos': { nombre: 'Prospectos', area: 'crm', vistaId: 'vista-crm-prospectos' },
@@ -281,11 +283,14 @@ async function obtenerProductosAPI() {
 let productosCatalogo = [];
 let carritoVenta = [];
 let totalVenta = 0;
+let proveedoresPOS = [];
+let consecutivoVentaRapida = 0;
 
 async function iniciarPOS() {
     await Promise.all([
         cargarProductosPOS(),
-        cargarClientesPOS()
+        cargarClientesPOS(),
+        cargarProveedoresPOS()
     ]);
 }
 
@@ -344,6 +349,105 @@ async function cargarClientesPOS() {
     }
 }
 
+async function cargarProveedoresPOS() {
+    const sesion = obtenerSesion();
+    const selector = document.getElementById('venta-rapida-proveedor');
+
+    if (!sesion || !selector) return;
+
+    selector.disabled = true;
+    selector.innerHTML = '<option value="">Cargando proveedores...</option>';
+
+    try {
+        const respuesta = await fetch(`/api/proveedores/${sesion.id_empresa}`);
+        const resultado = await respuesta.json();
+
+        if (!respuesta.ok || resultado.status !== 'success') {
+            throw new Error('No se pudieron cargar los proveedores.');
+        }
+
+        proveedoresPOS = resultado.data || [];
+        selector.innerHTML = [
+            '<option value="">Sin proveedor registrado</option>',
+            ...proveedoresPOS.map(proveedor => (
+                `<option value="${Number(proveedor.id_proveedor)}">${escaparHTML(proveedor.nombre)}</option>`
+            ))
+        ].join('');
+    } catch (error) {
+        console.error('Error al cargar proveedores para venta rápida:', error);
+        proveedoresPOS = [];
+        selector.innerHTML = '<option value="">Sin proveedor registrado</option>';
+    } finally {
+        selector.disabled = false;
+    }
+}
+
+function mostrarVentaRapida() {
+    const formulario = document.getElementById('form-venta-rapida');
+    formulario.classList.remove('oculto');
+    document.getElementById('venta-rapida-nombre').focus();
+    formulario.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function ocultarVentaRapida() {
+    document.getElementById('form-venta-rapida').classList.add('oculto');
+    document.getElementById('formVentaRapida').reset();
+    document.getElementById('venta-rapida-cantidad').value = '1';
+    document.getElementById('venta-rapida-costo').value = '0';
+}
+
+function agregarVentaRapida(event) {
+    event.preventDefault();
+
+    const nombre = document.getElementById('venta-rapida-nombre').value.trim();
+    const cantidad = Number(document.getElementById('venta-rapida-cantidad').value);
+    const precioVenta = Number(document.getElementById('venta-rapida-precio').value);
+    const costoUnitario = Number(document.getElementById('venta-rapida-costo').value || 0);
+    const proveedorValor = document.getElementById('venta-rapida-proveedor').value;
+    const idProveedor = proveedorValor ? Number(proveedorValor) : null;
+    const lugarCompra = document.getElementById('venta-rapida-lugar').value.trim() || null;
+
+    if (!nombre) {
+        alert('Escribe el nombre del producto.');
+        return;
+    }
+    if (!Number.isInteger(cantidad) || cantidad <= 0) {
+        alert('La cantidad debe ser un número entero mayor a cero.');
+        return;
+    }
+    if (!Number.isFinite(precioVenta) || precioVenta <= 0) {
+        alert('El precio de venta debe ser mayor a cero.');
+        return;
+    }
+    if (!Number.isFinite(costoUnitario) || costoUnitario < 0) {
+        alert('El costo unitario no es válido.');
+        return;
+    }
+
+    consecutivoVentaRapida += 1;
+    const proveedor = proveedoresPOS.find(
+        item => Number(item.id_proveedor) === idProveedor
+    );
+
+    carritoVenta.push({
+        clave_item: `rapida-${consecutivoVentaRapida}`,
+        tipo_item: 'Rapida',
+        id_producto: null,
+        nombre,
+        cantidad,
+        precio_venta: precioVenta,
+        costo_unitario: costoUnitario,
+        id_proveedor: idProveedor,
+        proveedor_nombre: proveedor?.nombre || null,
+        lugar_compra: lugarCompra,
+        subtotal: cantidad * precioVenta,
+        stock_maximo: null
+    });
+
+    ocultarVentaRapida();
+    actualizarVistaCarrito();
+}
+
 function renderizarCatalogoPOS(productos) {
     const gridPOS = document.getElementById('pos-grid-productos');
     
@@ -353,13 +457,13 @@ function renderizarCatalogoPOS(productos) {
     }
 
     gridPOS.innerHTML = productos.map(p => {
-        const nombreProveedor = p.proveedores ? p.proveedores.nombre : 'N/A';
+        const nombreProveedor = p.proveedores ? p.proveedores.nombre : 'Sin proveedor';
         return `
-        <div class="pos-card" onclick="agregarAlCarrito(${p.id_producto}, '${p.nombre}', ${p.precio_venta}, ${p.stock})">
-            <h4>${p.nombre}</h4>
-            <p style="font-size: 0.75rem; color: #6b7280; margin: 0 0 0.5rem 0;">Prov: ${nombreProveedor}</p>
-            <p>$${p.precio_venta.toFixed(2)}</p>
-            <small>Stock: ${p.stock} | ${p.sku || 'Sin SKU'}</small>
+        <div class="pos-card" onclick="agregarAlCarrito(${Number(p.id_producto)})">
+            <h4>${escaparHTML(p.nombre)}</h4>
+            <p style="font-size: 0.75rem; color: #6b7280; margin: 0 0 0.5rem 0;">Prov: ${escaparHTML(nombreProveedor)}</p>
+            <p>$${Number(p.precio_venta).toFixed(2)}</p>
+            <small>Stock: ${Number(p.stock)} | ${escaparHTML(p.sku || 'Sin SKU')}</small>
         </div>
     `}).join('');
 }
@@ -372,11 +476,23 @@ function filtrarPOS() {
     renderizarCatalogoPOS(filtrados);
 }
 
-function agregarAlCarrito(id_producto, nombre, precio, stock_maximo) {
-    const existe = carritoVenta.find(item => item.id_producto === id_producto);
+function agregarAlCarrito(idProducto) {
+    const producto = productosCatalogo.find(
+        item => Number(item.id_producto) === Number(idProducto)
+    );
+    if (!producto) {
+        alert('El producto ya no está disponible. Actualiza el catálogo.');
+        return;
+    }
+
+    const existe = carritoVenta.find(
+        item => item.tipo_item === 'Inventario'
+            && Number(item.id_producto) === Number(idProducto)
+    );
+    const stockMaximo = Number(producto.stock);
     
     if (existe) {
-        if(existe.cantidad < stock_maximo) {
+        if(existe.cantidad < stockMaximo) {
             existe.cantidad += 1;
             existe.subtotal = existe.cantidad * existe.precio_venta;
         } else {
@@ -384,26 +500,31 @@ function agregarAlCarrito(id_producto, nombre, precio, stock_maximo) {
         }
     } else {
         carritoVenta.push({
-            id_producto: id_producto,
-            nombre: nombre,
+            clave_item: `inventario-${Number(producto.id_producto)}`,
+            tipo_item: 'Inventario',
+            id_producto: Number(producto.id_producto),
+            nombre: producto.nombre,
             cantidad: 1,
-            precio_venta: precio,
-            subtotal: precio,
-            stock_maximo: stock_maximo
+            precio_venta: Number(producto.precio_venta),
+            costo_unitario: Number(producto.precio_compra || 0),
+            id_proveedor: null,
+            lugar_compra: null,
+            subtotal: Number(producto.precio_venta),
+            stock_maximo: stockMaximo
         });
     }
     
     actualizarVistaCarrito();
 }
 
-function cambiarCantidadManual(id_producto, nuevaCantidad) {
-    const item = carritoVenta.find(i => i.id_producto === id_producto);
+function cambiarCantidadManual(claveItem, nuevaCantidad) {
+    const item = carritoVenta.find(i => i.clave_item === claveItem);
     if (!item) return;
 
     let cant = parseInt(nuevaCantidad);
     if (isNaN(cant) || cant <= 0) {
-        carritoVenta = carritoVenta.filter(i => i.id_producto !== id_producto);
-    } else if (cant > item.stock_maximo) {
+        carritoVenta = carritoVenta.filter(i => i.clave_item !== claveItem);
+    } else if (item.tipo_item === 'Inventario' && cant > item.stock_maximo) {
         alert("La cantidad ingresada supera el stock disponible (" + item.stock_maximo + ")");
         item.cantidad = item.stock_maximo;
         item.subtotal = item.cantidad * item.precio_venta;
@@ -415,10 +536,10 @@ function cambiarCantidadManual(id_producto, nuevaCantidad) {
     actualizarVistaCarrito();
 }
 
-function ajustarCantidad(id_producto, delta) {
-    const item = carritoVenta.find(i => i.id_producto === id_producto);
+function ajustarCantidad(claveItem, delta) {
+    const item = carritoVenta.find(i => i.clave_item === claveItem);
     if (item) {
-        cambiarCantidadManual(id_producto, item.cantidad + delta);
+        cambiarCantidadManual(claveItem, item.cantidad + delta);
     }
 }
 
@@ -509,26 +630,40 @@ function actualizarVistaCarrito() {
     calcularCambio(); 
     actualizarResumenCreditoVenta();
 
-    listaCarrito.innerHTML = carritoVenta.map(item => `
-        <div class="carrito-item">
-            <div class="carrito-info">
-                <h4>${item.nombre}</h4>
-                <div class="carrito-cantidad-control">
-                    <button class="btn-cant" onclick="ajustarCantidad(${item.id_producto}, -1)">-</button>
-                    <input type="number" class="input-cant-manual" value="${item.cantidad}" onchange="cambiarCantidadManual(${item.id_producto}, this.value)">
-                    <button class="btn-cant" onclick="ajustarCantidad(${item.id_producto}, 1)">+</button>
-                    <small style="margin-left: 5px; color: #6b7280;">x $${item.precio_venta.toFixed(2)}</small>
+    listaCarrito.innerHTML = carritoVenta.map(item => {
+        const esRapida = item.tipo_item === 'Rapida';
+        const origen = item.proveedor_nombre
+            || item.lugar_compra
+            || 'Sin origen registrado';
+
+        return `
+            <div class="carrito-item ${esRapida ? 'quick-cart-item' : ''}">
+                <div class="carrito-info">
+                    <div class="cart-item-heading">
+                        <h4>${escaparHTML(item.nombre)}</h4>
+                        <span class="${esRapida ? 'badge-warning' : 'badge-neutral'}">
+                            ${esRapida ? 'Venta rápida' : 'Inventario'}
+                        </span>
+                    </div>
+                    ${esRapida ? `<p>Origen: ${escaparHTML(origen)}</p>` : ''}
+                    <div class="carrito-cantidad-control">
+                        <button type="button" class="btn-cant" onclick="ajustarCantidad('${item.clave_item}', -1)">-</button>
+                        <input type="number" min="1" step="1" class="input-cant-manual" value="${item.cantidad}" onchange="cambiarCantidadManual('${item.clave_item}', this.value)">
+                        <button type="button" class="btn-cant" onclick="ajustarCantidad('${item.clave_item}', 1)">+</button>
+                        <small style="margin-left: 5px; color: #6b7280;">x $${Number(item.precio_venta).toFixed(2)}</small>
+                    </div>
+                </div>
+                <div class="carrito-precio">
+                    $${Number(item.subtotal).toFixed(2)}
                 </div>
             </div>
-            <div class="carrito-precio">
-                $${item.subtotal.toFixed(2)}
-            </div>
-        </div>
-    `).join('');
+        `;
+    }).join('');
 }
 
 function limpiarCarrito() {
     carritoVenta = [];
+    ocultarVentaRapida();
     document.getElementById('pos-cliente').value = '';
     document.getElementById('pos-tipo-venta').value = 'Contado';
     document.getElementById('pos-metodo-pago').value = 'Efectivo';
@@ -595,6 +730,18 @@ async function procesarVenta() {
     btnCobrar.innerText = "Procesando...";
     btnCobrar.disabled = true;
     
+    const carritoAPI = carritoVenta.map(item => ({
+        tipo_item: item.tipo_item,
+        id_producto: item.id_producto,
+        nombre: item.nombre,
+        cantidad: item.cantidad,
+        precio_venta: item.precio_venta,
+        costo_unitario: item.costo_unitario || 0,
+        id_proveedor: item.id_proveedor || null,
+        lugar_compra: item.lugar_compra || null,
+        subtotal: item.subtotal
+    }));
+
     const datosVenta = {
         id_empresa: sesion.id_empresa,
         total: totalVenta,
@@ -603,7 +750,7 @@ async function procesarVenta() {
         tipo_venta: tipoVenta,
         monto_inicial: montoInicial,
         metodo_pago: metodoPagoInput,
-        carrito: carritoVenta
+        carrito: carritoAPI
     };
 
     try {
@@ -616,9 +763,14 @@ async function procesarVenta() {
         const resultado = await respuesta.json();
 
         if (resultado.exito) {
+            const contieneVentaRapida = carritoVenta.some(
+                item => item.tipo_item === 'Rapida'
+            );
             const mensaje = tipoVenta === 'Credito'
                 ? "Venta a crédito registrada. La cuenta ya aparece en Finanzas → Cuentas por cobrar."
-                : "Venta procesada con éxito. El stock se ha descontado.";
+                : contieneVentaRapida
+                    ? "Venta procesada. Solo los productos de inventario descontaron existencias."
+                    : "Venta procesada con éxito. El stock se ha descontado.";
             alert(mensaje);
             limpiarCarrito();
             iniciarPOS(); 
@@ -678,6 +830,7 @@ async function obtenerHistorialVentasAPI() {
 // ==========================================
 let clientesCatalogo = [];
 let clienteEditandoId = null;
+let comprasClientesGlobal = [];
 
 function normalizarBusqueda(valor) {
     return String(valor ?? '')
@@ -765,6 +918,9 @@ async function obtenerClientesAPI() {
         tablaBody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: #991b1b;">No se pudo cargar el directorio de clientes.</td></tr>';
         document.getElementById('clientes-resumen').textContent = '';
     }
+
+    actualizarSelectorComprasClientes();
+    await obtenerComprasClientesAPI();
 }
 
 function filtrarClientes() {
@@ -835,6 +991,189 @@ function renderizarClientes(clientes) {
             </tr>
         `;
     }).join('');
+}
+
+function actualizarSelectorComprasClientes() {
+    const selector = document.getElementById('compras-clientes-filtro-cliente');
+    if (!selector) return;
+
+    const seleccionAnterior = selector.value;
+    const clientes = new Map();
+
+    clientesCatalogo.forEach(cliente => {
+        clientes.set(String(cliente.id_cliente), cliente.nombre);
+    });
+
+    comprasClientesGlobal.forEach(venta => {
+        if (venta.id_cliente) {
+            clientes.set(
+                String(venta.id_cliente),
+                venta.cliente || `Cliente ${venta.id_cliente}`
+            );
+        }
+    });
+
+    selector.innerHTML = [
+        '<option value="todos">Todos los clientes</option>',
+        ...Array.from(clientes.entries())
+            .sort((a, b) => String(a[1]).localeCompare(String(b[1]), 'es'))
+            .map(([idCliente, nombre]) => (
+                `<option value="${idCliente}">${escaparHTML(nombre)}</option>`
+            ))
+    ].join('');
+
+    selector.value = Array.from(selector.options).some(
+        opcion => opcion.value === seleccionAnterior
+    ) ? seleccionAnterior : 'todos';
+}
+
+function productosDeCompraCliente(venta) {
+    return (venta.ventas_detalle || []).map(detalle => ({
+        nombre: detalle.nombre_producto
+            || detalle.productos?.nombre
+            || 'Producto histórico',
+        cantidad: Number(detalle.cantidad || 0),
+        tipo: detalle.tipo_item || 'Inventario'
+    }));
+}
+
+async function obtenerComprasClientesAPI() {
+    const sesion = obtenerSesion();
+    const tabla = document.getElementById('tabla-compras-clientes-body');
+
+    if (!sesion || !tabla) return;
+
+    tabla.innerHTML = '<tr><td colspan="6" style="text-align:center;">Cargando compras de clientes...</td></tr>';
+
+    try {
+        const respuesta = await fetch(`/api/clientes/${sesion.id_empresa}/compras`);
+        const resultado = await respuesta.json();
+
+        if (!respuesta.ok || resultado.status !== 'success') {
+            throw new Error(
+                mensajeErrorAPI(resultado, 'No se pudieron consultar las compras de clientes.')
+            );
+        }
+
+        comprasClientesGlobal = resultado.data || [];
+        actualizarSelectorComprasClientes();
+        filtrarComprasClientes();
+    } catch (error) {
+        console.error('Error al cargar compras de clientes:', error);
+        comprasClientesGlobal = [];
+        actualizarResumenComprasClientes([]);
+        document.getElementById('compras-clientes-resumen').textContent = '';
+        tabla.innerHTML = `
+            <tr>
+                <td colspan="6" style="text-align:center; color:#991b1b;">
+                    No se pudo cargar el historial. Verifica que ejecutaste la migración de venta rápida.
+                </td>
+            </tr>
+        `;
+    }
+}
+
+function filtrarComprasClientes() {
+    const selector = document.getElementById('compras-clientes-filtro-cliente');
+    if (!selector) return;
+
+    const idCliente = selector.value;
+    const fechaInicio = document.getElementById('compras-clientes-fecha-inicio').value;
+    const fechaFin = document.getElementById('compras-clientes-fecha-fin').value;
+    const texto = normalizarBusqueda(
+        document.getElementById('compras-clientes-busqueda').value
+    );
+
+    const filtradas = comprasClientesGlobal.filter(venta => {
+        const fechaVenta = String(venta.fecha || '').slice(0, 10);
+        const productos = productosDeCompraCliente(venta);
+        const contenido = [
+            venta.id_venta,
+            venta.cliente,
+            ...productos.map(producto => producto.nombre)
+        ].map(normalizarBusqueda).join(' ');
+
+        return (
+            (idCliente === 'todos' || String(venta.id_cliente) === idCliente)
+            && (!fechaInicio || fechaVenta >= fechaInicio)
+            && (!fechaFin || fechaVenta <= fechaFin)
+            && (!texto || contenido.includes(texto))
+        );
+    });
+
+    actualizarResumenComprasClientes(filtradas);
+    renderizarComprasClientes(filtradas);
+}
+
+function actualizarResumenComprasClientes(ventas) {
+    const resumen = ventas.reduce(
+        (acumulado, venta) => {
+            acumulado.total += Number(venta.total || 0);
+            acumulado.articulos += productosDeCompraCliente(venta).reduce(
+                (suma, producto) => suma + producto.cantidad,
+                0
+            );
+            return acumulado;
+        },
+        { total: 0, articulos: 0 }
+    );
+
+    document.getElementById('compras-clientes-total').textContent = formatearMoneda(resumen.total);
+    document.getElementById('compras-clientes-tickets').textContent = ventas.length;
+    document.getElementById('compras-clientes-articulos').textContent = resumen.articulos;
+}
+
+function renderizarComprasClientes(ventas) {
+    const tabla = document.getElementById('tabla-compras-clientes-body');
+    const resumen = document.getElementById('compras-clientes-resumen');
+
+    resumen.textContent = `${ventas.length} de ${comprasClientesGlobal.length} compra(s)`;
+
+    if (ventas.length === 0) {
+        tabla.innerHTML = `
+            <tr>
+                <td colspan="6" style="text-align:center;">
+                    No hay compras que coincidan con los filtros.
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
+    tabla.innerHTML = ventas.map(venta => {
+        const productos = productosDeCompraCliente(venta);
+        const listaProductos = productos.length
+            ? productos.map(producto => `
+                <span class="client-product-line">
+                    ${escaparHTML(producto.nombre)} × ${producto.cantidad}
+                    ${producto.tipo === 'Rapida' ? '<small>Venta rápida</small>' : ''}
+                </span>
+            `).join('')
+            : '<span>Sin detalle disponible</span>';
+
+        return `
+            <tr>
+                <td>${formatearFechaCXC(venta.fecha, true)}</td>
+                <td><strong>${escaparHTML(venta.cliente || 'Cliente sin nombre')}</strong></td>
+                <td>#${Number(venta.id_venta)}</td>
+                <td><div class="client-product-list">${listaProductos}</div></td>
+                <td>
+                    <span class="${venta.tipo_venta === 'Credito' ? 'badge-warning' : 'badge-success'}">
+                        ${venta.tipo_venta === 'Credito' ? 'Crédito' : 'Contado'}
+                    </span>
+                </td>
+                <td><strong>${formatearMoneda(venta.total)}</strong></td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function restablecerFiltrosComprasClientes() {
+    document.getElementById('compras-clientes-filtro-cliente').value = 'todos';
+    document.getElementById('compras-clientes-fecha-inicio').value = '';
+    document.getElementById('compras-clientes-fecha-fin').value = '';
+    document.getElementById('compras-clientes-busqueda').value = '';
+    filtrarComprasClientes();
 }
 
 async function guardarCliente(event) {
@@ -1034,9 +1373,24 @@ function limpiarCarritoCompra() {
     
     if (selectProv) selectProv.value = '';
     if (selectTipo) selectTipo.value = 'Contado';
+    if (document.getElementById('compra-lugar')) {
+        document.getElementById('compra-lugar').value = '';
+    }
     
     toggleCamposCreditoCompra(); // Fuerza a ocultar casillas
+    actualizarOrigenCompra();
     actualizarVistaCarritoCompra();
+}
+
+function actualizarOrigenCompra() {
+    const proveedor = document.getElementById('compra-proveedor');
+    const lugar = document.getElementById('compra-lugar');
+    if (!proveedor || !lugar) return;
+
+    lugar.required = !proveedor.value;
+    lugar.placeholder = proveedor.value
+        ? 'Tienda, sucursal o referencia (opcional)'
+        : 'Obligatorio si no seleccionas proveedor';
 }
 
 async function iniciarNuevaCompra() {
@@ -1051,12 +1405,13 @@ async function iniciarNuevaCompra() {
         const resProv = await fetch(`/api/proveedores/${sesion.id_empresa}`);
         const dataProv = await resProv.json();
         
-        if (dataProv.data.length === 0) {
-            selectProveedor.innerHTML = '<option value="">No tienes proveedores registrados</option>';
-        } else {
-            selectProveedor.innerHTML = '<option value="">-- Selecciona un Proveedor --</option>' + 
-                dataProv.data.map(p => `<option value="${p.id_proveedor}">${p.nombre}</option>`).join('');
-        }
+        selectProveedor.innerHTML = [
+            '<option value="">Sin proveedor registrado</option>',
+            ...(dataProv.data || []).map(p => (
+                `<option value="${Number(p.id_proveedor)}">${escaparHTML(p.nombre)}</option>`
+            ))
+        ].join('');
+        actualizarOrigenCompra();
 
         const resProd = await fetch(`/api/productos/${sesion.id_empresa}`);
         const dataProd = await resProd.json();
@@ -1201,9 +1556,10 @@ function actualizarVistaCarritoCompra() {
 
 async function procesarOrdenCompra() {
     const proveedorId = document.getElementById('compra-proveedor').value;
-    
-    if (!proveedorId) {
-        alert("Por favor, selecciona un proveedor primero.");
+    const lugarCompra = document.getElementById('compra-lugar').value.trim();
+
+    if (!proveedorId && !lugarCompra) {
+        alert("Selecciona un proveedor o escribe dónde se compró.");
         return;
     }
 
@@ -1221,7 +1577,8 @@ async function procesarOrdenCompra() {
     
     const datosCompra = {
         id_empresa: sesion.id_empresa,
-        id_proveedor: parseInt(proveedorId),
+        id_proveedor: proveedorId ? parseInt(proveedorId) : null,
+        lugar_compra: lugarCompra || null,
         total: compraTotal,
         tipo_compra: tipoCompra,
         metodo_pago: document.getElementById('compra-medio-pago').value,
@@ -1295,7 +1652,7 @@ async function obtenerCXPAPI() {
             return `
             <tr>
                 <td><strong>#${c.id_compra}</strong></td>
-                <td>${c.proveedores ? c.proveedores.nombre : 'N/A'}</td>
+                <td>${escaparHTML(c.proveedores?.nombre || c.lugar_compra || 'Sin proveedor')}</td>
                 <td>${c.dias_credito ? c.dias_credito + ' días' : 'Contado'}</td>
                 <td>$${c.total.toFixed(2)}</td>
                 <td><span style="color:#10b981;">$${abonado.toFixed(2)}</span></td>
@@ -1633,375 +1990,6 @@ async function procesarAbonoCXC() {
 }
 
 // ==========================================
-// INGRESOS Y COBROS
-// ==========================================
-let movimientosIngresosGlobal = [];
-let filtrosIngresosInicializados = false;
-
-function fechaLocalIngresos(valor) {
-    if (!valor) return '';
-
-    const fecha = new Date(valor);
-
-    if (Number.isNaN(fecha.getTime())) {
-        return '';
-    }
-
-    const anio = fecha.getFullYear();
-    const mes = String(fecha.getMonth() + 1).padStart(2, '0');
-    const dia = String(fecha.getDate()).padStart(2, '0');
-
-    return `${anio}-${mes}-${dia}`;
-}
-
-function establecerMesActualIngresos() {
-    const hoy = new Date();
-    const primerDia = new Date(
-        hoy.getFullYear(),
-        hoy.getMonth(),
-        1
-    );
-
-    document.getElementById(
-        'ingresos-fecha-inicio'
-    ).value = fechaLocalIngresos(primerDia);
-
-    document.getElementById(
-        'ingresos-fecha-fin'
-    ).value = fechaLocalIngresos(hoy);
-}
-
-function inicializarFiltrosIngresos() {
-    if (filtrosIngresosInicializados) {
-        return;
-    }
-
-    establecerMesActualIngresos();
-    filtrosIngresosInicializados = true;
-}
-
-async function obtenerIngresosAPI() {
-    const sesion = obtenerSesion();
-    const tabla = document.getElementById(
-        'tabla-ingresos-body'
-    );
-
-    if (!sesion || !tabla) {
-        return;
-    }
-
-    inicializarFiltrosIngresos();
-
-    tabla.innerHTML = `
-        <tr>
-            <td colspan="8" style="text-align:center;">
-                Cargando ingresos...
-            </td>
-        </tr>
-    `;
-
-    try {
-        const respuesta = await fetch(
-            `/api/ingresos/${sesion.id_empresa}`
-        );
-
-        const resultado = await respuesta.json();
-
-        if (
-            !respuesta.ok
-            || resultado.status !== 'success'
-        ) {
-            throw new Error(
-                resultado.detail
-                || resultado.mensaje
-                || 'No se pudieron consultar los ingresos.'
-            );
-        }
-
-        movimientosIngresosGlobal = resultado.data || [];
-
-        actualizarMetodosIngresos();
-        filtrarIngresos();
-
-    } catch (error) {
-        console.error(
-            'Error al cargar ingresos y cobros:',
-            error
-        );
-
-        movimientosIngresosGlobal = [];
-        actualizarResumenIngresos([]);
-
-        document.getElementById(
-            'ingresos-resumen-registros'
-        ).textContent = '';
-
-        tabla.innerHTML = `
-            <tr>
-                <td
-                    colspan="8"
-                    style="text-align:center; color:#991b1b;"
-                >
-                    No se pudieron cargar los ingresos y cobros.
-                </td>
-            </tr>
-        `;
-    }
-}
-
-function actualizarMetodosIngresos() {
-    const selector = document.getElementById(
-        'ingresos-filtro-metodo'
-    );
-
-    const seleccionAnterior = selector.value;
-
-    const metodos = [
-        ...new Set(
-            movimientosIngresosGlobal
-                .map(movimiento => movimiento.metodo_pago)
-                .filter(Boolean)
-        )
-    ].sort(
-        (a, b) => String(a).localeCompare(
-            String(b),
-            'es'
-        )
-    );
-
-    selector.innerHTML = [
-        '<option value="todos">Todos</option>',
-        ...metodos.map(metodo => `
-            <option value="${escaparHTML(metodo)}">
-                ${escaparHTML(metodo)}
-            </option>
-        `)
-    ].join('');
-
-    const existeSeleccion = Array.from(
-        selector.options
-    ).some(
-        opcion => opcion.value === seleccionAnterior
-    );
-
-    selector.value = existeSeleccion
-        ? seleccionAnterior
-        : 'todos';
-}
-
-function filtrarIngresos() {
-    const texto = document.getElementById(
-        'ingresos-busqueda'
-    ).value.trim().toLowerCase();
-
-    const origen = document.getElementById(
-        'ingresos-filtro-origen'
-    ).value;
-
-    const metodo = document.getElementById(
-        'ingresos-filtro-metodo'
-    ).value;
-
-    const fechaInicio = document.getElementById(
-        'ingresos-fecha-inicio'
-    ).value;
-
-    const fechaFin = document.getElementById(
-        'ingresos-fecha-fin'
-    ).value;
-
-    const filtrados = movimientosIngresosGlobal.filter(
-        movimiento => {
-            const fechaMovimiento = fechaLocalIngresos(
-                movimiento.fecha
-            );
-
-            const contenido = [
-                movimiento.id_venta,
-                movimiento.cliente,
-                movimiento.tipo,
-                movimiento.metodo_pago,
-                movimiento.referencia,
-                movimiento.notas
-            ].join(' ').toLowerCase();
-
-            const coincideTexto =
-                !texto
-                || contenido.includes(texto);
-
-            const coincideOrigen =
-                origen === 'todos'
-                || movimiento.origen === origen;
-
-            const coincideMetodo =
-                metodo === 'todos'
-                || movimiento.metodo_pago === metodo;
-
-            const coincideInicio =
-                !fechaInicio
-                || fechaMovimiento >= fechaInicio;
-
-            const coincideFin =
-                !fechaFin
-                || fechaMovimiento <= fechaFin;
-
-            return (
-                coincideTexto
-                && coincideOrigen
-                && coincideMetodo
-                && coincideInicio
-                && coincideFin
-            );
-        }
-    );
-
-    actualizarResumenIngresos(filtrados);
-    renderizarIngresos(filtrados);
-}
-
-function actualizarResumenIngresos(movimientos) {
-    const resumen = movimientos.reduce(
-        (acumulado, movimiento) => {
-            const monto = Number(
-                movimiento.monto || 0
-            );
-
-            acumulado.total += monto;
-
-            if (movimiento.origen === 'Contado') {
-                acumulado.contado += monto;
-            }
-
-            if (movimiento.origen === 'Credito') {
-                acumulado.credito += monto;
-            }
-
-            return acumulado;
-        },
-        {
-            total: 0,
-            contado: 0,
-            credito: 0
-        }
-    );
-
-    document.getElementById(
-        'ingresos-resumen-total'
-    ).textContent = formatearMoneda(resumen.total);
-
-    document.getElementById(
-        'ingresos-resumen-contado'
-    ).textContent = formatearMoneda(resumen.contado);
-
-    document.getElementById(
-        'ingresos-resumen-credito'
-    ).textContent = formatearMoneda(resumen.credito);
-
-    document.getElementById(
-        'ingresos-resumen-movimientos'
-    ).textContent = movimientos.length;
-}
-
-function renderizarIngresos(movimientos) {
-    const tabla = document.getElementById(
-        'tabla-ingresos-body'
-    );
-
-    document.getElementById(
-        'ingresos-resumen-registros'
-    ).textContent = (
-        `${movimientos.length} de `
-        + `${movimientosIngresosGlobal.length} movimiento(s)`
-    );
-
-    if (movimientos.length === 0) {
-        tabla.innerHTML = `
-            <tr>
-                <td colspan="8" style="text-align:center;">
-                    No hay ingresos que coincidan con los filtros.
-                </td>
-            </tr>
-        `;
-
-        return;
-    }
-
-    tabla.innerHTML = movimientos.map(
-        movimiento => {
-            const clase = movimiento.origen === 'Contado'
-                ? 'badge-success'
-                : 'badge-warning';
-
-            return `
-                <tr>
-                    <td>
-                        ${formatearFechaCXC(
-                            movimiento.fecha,
-                            true
-                        )}
-                    </td>
-
-                    <td>
-                        <span class="${clase}">
-                            ${escaparHTML(movimiento.tipo)}
-                        </span>
-                    </td>
-
-                    <td>
-                        <strong>
-                            #${escaparHTML(movimiento.id_venta)}
-                        </strong>
-                    </td>
-
-                    <td>
-                        ${escaparHTML(movimiento.cliente)}
-                    </td>
-
-                    <td>
-                        ${escaparHTML(movimiento.metodo_pago)}
-                    </td>
-
-                    <td>
-                        ${escaparHTML(
-                            movimiento.referencia || '—'
-                        )}
-                    </td>
-
-                    <td>
-                        ${escaparHTML(
-                            movimiento.notas || '—'
-                        )}
-                    </td>
-
-                    <td class="amount-positive">
-                        <strong>
-                            ${formatearMoneda(movimiento.monto)}
-                        </strong>
-                    </td>
-                </tr>
-            `;
-        }
-    ).join('');
-}
-
-function restablecerFiltrosIngresos() {
-    document.getElementById(
-        'ingresos-busqueda'
-    ).value = '';
-
-    document.getElementById(
-        'ingresos-filtro-origen'
-    ).value = 'todos';
-
-    document.getElementById(
-        'ingresos-filtro-metodo'
-    ).value = 'todos';
-
-    establecerMesActualIngresos();
-    filtrarIngresos();
-}
-
-// ==========================================
 // GASTOS Y SALIDAS
 // ==========================================
 let movimientosGastosGlobal = [];
@@ -2013,43 +2001,29 @@ function fechaLocalGastos(valor) {
     const texto = String(valor);
     const fecha = texto.length === 10
         ? new Date(`${texto}T00:00:00`)
-        : new Date(texto);
+        : new Date(valor);
 
     if (Number.isNaN(fecha.getTime())) return '';
 
     const anio = fecha.getFullYear();
     const mes = String(fecha.getMonth() + 1).padStart(2, '0');
     const dia = String(fecha.getDate()).padStart(2, '0');
-
     return `${anio}-${mes}-${dia}`;
 }
 
 function establecerMesActualGastos() {
     const hoy = new Date();
-    const primerDia = new Date(
-        hoy.getFullYear(),
-        hoy.getMonth(),
-        1
-    );
-
-    document.getElementById(
-        'gastos-fecha-inicio'
-    ).value = fechaLocalGastos(primerDia);
-
-    document.getElementById(
-        'gastos-fecha-fin'
-    ).value = fechaLocalGastos(hoy);
+    const primerDia = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+    document.getElementById('gastos-fecha-inicio').value = fechaLocalGastos(primerDia);
+    document.getElementById('gastos-fecha-fin').value = fechaLocalGastos(hoy);
 }
 
 function establecerFechaNuevoGasto() {
-    document.getElementById(
-        'gasto-fecha'
-    ).value = fechaLocalGastos(new Date());
+    document.getElementById('gasto-fecha').value = fechaLocalGastos(new Date());
 }
 
 function inicializarFiltrosGastos() {
     if (filtrosGastosInicializados) return;
-
     establecerMesActualGastos();
     establecerFechaNuevoGasto();
     filtrosGastosInicializados = true;
@@ -2057,85 +2031,46 @@ function inicializarFiltrosGastos() {
 
 function mostrarFormularioGasto() {
     inicializarFiltrosGastos();
-
-    document.getElementById(
-        'form-gasto-container'
-    ).classList.remove('oculto');
-
-    document.getElementById(
-        'gasto-concepto'
-    ).focus();
+    document.getElementById('form-gasto-container').classList.remove('oculto');
+    document.getElementById('gasto-concepto').focus();
 }
 
 function ocultarFormularioGasto() {
-    document.getElementById(
-        'form-gasto-container'
-    ).classList.add('oculto');
-
-    document.getElementById(
-        'form-gasto'
-    ).reset();
-
+    document.getElementById('form-gasto-container').classList.add('oculto');
+    document.getElementById('form-gasto').reset();
     establecerFechaNuevoGasto();
 }
 
 async function obtenerGastosAPI() {
     const sesion = obtenerSesion();
-    const tabla = document.getElementById(
-        'tabla-gastos-body'
-    );
-
+    const tabla = document.getElementById('tabla-gastos-body');
     if (!sesion || !tabla) return;
 
     inicializarFiltrosGastos();
-
-    tabla.innerHTML = `
-        <tr>
-            <td colspan="10" style="text-align:center;">
-                Cargando gastos...
-            </td>
-        </tr>
-    `;
+    tabla.innerHTML = '<tr><td colspan="10" style="text-align:center;">Cargando gastos...</td></tr>';
 
     try {
-        const respuesta = await fetch(
-            `/api/gastos/${sesion.id_empresa}`
-        );
-
+        const respuesta = await fetch(`/api/gastos/${sesion.id_empresa}`);
         const resultado = await respuesta.json();
 
-        if (
-            !respuesta.ok
-            || resultado.status !== 'success'
-        ) {
+        if (!respuesta.ok || resultado.status !== 'success') {
             throw new Error(
-                resultado.mensaje
-                || 'No se pudieron consultar los gastos.'
+                mensajeErrorAPI(resultado, 'No se pudieron consultar los gastos.')
             );
         }
 
         movimientosGastosGlobal = resultado.data || [];
-
         actualizarSelectoresGastos();
         filtrarGastos();
-
     } catch (error) {
         console.error('Error al cargar gastos:', error);
-
         movimientosGastosGlobal = [];
         actualizarResumenGastos([]);
-
-        document.getElementById(
-            'gastos-resumen-registros'
-        ).textContent = '';
-
+        document.getElementById('gastos-resumen-registros').textContent = '';
         tabla.innerHTML = `
             <tr>
-                <td
-                    colspan="10"
-                    style="text-align:center; color:#991b1b;"
-                >
-                    No se pudieron cargar los gastos.
+                <td colspan="10" style="text-align:center; color:#991b1b;">
+                    No se pudieron cargar los gastos. Verifica la migración de Gastos.
                 </td>
             </tr>
         `;
@@ -2143,146 +2078,66 @@ async function obtenerGastosAPI() {
 }
 
 function actualizarSelectoresGastos() {
-    function rellenarSelector(
-        selectorId,
-        valores,
-        etiquetaTodos
-    ) {
-        const selector = document.getElementById(
-            selectorId
-        );
-
+    function rellenarSelector(selectorId, valores, etiquetaTodos) {
+        const selector = document.getElementById(selectorId);
         const seleccionAnterior = selector.value;
-
         selector.innerHTML = [
             `<option value="todos">${etiquetaTodos}</option>`,
-            ...valores.map(valor => `
-                <option value="${escaparHTML(valor)}">
-                    ${escaparHTML(valor)}
-                </option>
-            `)
+            ...valores.map(valor => (
+                `<option value="${escaparHTML(valor)}">${escaparHTML(valor)}</option>`
+            ))
         ].join('');
 
-        const existeSeleccion = Array.from(
-            selector.options
-        ).some(
+        selector.value = Array.from(selector.options).some(
             opcion => opcion.value === seleccionAnterior
-        );
-
-        selector.value = existeSeleccion
-            ? seleccionAnterior
-            : 'todos';
+        ) ? seleccionAnterior : 'todos';
     }
 
-    const categorias = [
-        ...new Set(
-            movimientosGastosGlobal
-                .map(movimiento => movimiento.categoria)
-                .filter(Boolean)
-        )
-    ].sort(
-        (a, b) => String(a).localeCompare(String(b), 'es')
-    );
+    const categorias = [...new Set(
+        movimientosGastosGlobal.map(movimiento => movimiento.categoria).filter(Boolean)
+    )].sort((a, b) => String(a).localeCompare(String(b), 'es'));
 
-    const metodos = [
-        ...new Set(
-            movimientosGastosGlobal
-                .map(movimiento => movimiento.metodo_pago)
-                .filter(Boolean)
-        )
-    ].sort(
-        (a, b) => String(a).localeCompare(String(b), 'es')
-    );
+    const metodos = [...new Set(
+        movimientosGastosGlobal.map(movimiento => movimiento.metodo_pago).filter(Boolean)
+    )].sort((a, b) => String(a).localeCompare(String(b), 'es'));
 
-    rellenarSelector(
-        'gastos-filtro-categoria',
-        categorias,
-        'Todas'
-    );
-
-    rellenarSelector(
-        'gastos-filtro-metodo',
-        metodos,
-        'Todos'
-    );
+    rellenarSelector('gastos-filtro-categoria', categorias, 'Todas');
+    rellenarSelector('gastos-filtro-metodo', metodos, 'Todos');
 }
 
 function filtrarGastos() {
-    const texto = document.getElementById(
-        'gastos-busqueda'
-    ).value.trim().toLowerCase();
+    const texto = document.getElementById('gastos-busqueda').value.trim().toLowerCase();
+    const origen = document.getElementById('gastos-filtro-origen').value;
+    const tipo = document.getElementById('gastos-filtro-tipo').value;
+    const categoria = document.getElementById('gastos-filtro-categoria').value;
+    const metodo = document.getElementById('gastos-filtro-metodo').value;
+    const fechaInicio = document.getElementById('gastos-fecha-inicio').value;
+    const fechaFin = document.getElementById('gastos-fecha-fin').value;
 
-    const origen = document.getElementById(
-        'gastos-filtro-origen'
-    ).value;
+    const filtrados = movimientosGastosGlobal.filter(movimiento => {
+        const fechaMovimiento = fechaLocalGastos(movimiento.fecha);
+        const contenido = [
+            movimiento.id_gasto,
+            movimiento.id_compra,
+            movimiento.origen,
+            movimiento.tipo_gasto,
+            movimiento.categoria,
+            movimiento.concepto,
+            movimiento.metodo_pago,
+            movimiento.referencia,
+            movimiento.notas
+        ].join(' ').toLowerCase();
 
-    const tipo = document.getElementById(
-        'gastos-filtro-tipo'
-    ).value;
-
-    const categoria = document.getElementById(
-        'gastos-filtro-categoria'
-    ).value;
-
-    const metodo = document.getElementById(
-        'gastos-filtro-metodo'
-    ).value;
-
-    const fechaInicio = document.getElementById(
-        'gastos-fecha-inicio'
-    ).value;
-
-    const fechaFin = document.getElementById(
-        'gastos-fecha-fin'
-    ).value;
-
-    const filtrados = movimientosGastosGlobal.filter(
-        movimiento => {
-            const fechaMovimiento = fechaLocalGastos(
-                movimiento.fecha
-            );
-
-            const contenido = [
-                movimiento.id_gasto,
-                movimiento.id_compra,
-                movimiento.origen,
-                movimiento.tipo_gasto,
-                movimiento.categoria,
-                movimiento.concepto,
-                movimiento.metodo_pago,
-                movimiento.referencia,
-                movimiento.notas
-            ].join(' ').toLowerCase();
-
-            return (
-                (!texto || contenido.includes(texto))
-                && (
-                    origen === 'todos'
-                    || movimiento.origen === origen
-                )
-                && (
-                    tipo === 'todos'
-                    || movimiento.tipo_gasto === tipo
-                )
-                && (
-                    categoria === 'todos'
-                    || movimiento.categoria === categoria
-                )
-                && (
-                    metodo === 'todos'
-                    || movimiento.metodo_pago === metodo
-                )
-                && (
-                    !fechaInicio
-                    || fechaMovimiento >= fechaInicio
-                )
-                && (
-                    !fechaFin
-                    || fechaMovimiento <= fechaFin
-                )
-            );
-        }
-    );
+        return (
+            (!texto || contenido.includes(texto))
+            && (origen === 'todos' || movimiento.origen === origen)
+            && (tipo === 'todos' || movimiento.tipo_gasto === tipo)
+            && (categoria === 'todos' || movimiento.categoria === categoria)
+            && (metodo === 'todos' || movimiento.metodo_pago === metodo)
+            && (!fechaInicio || fechaMovimiento >= fechaInicio)
+            && (!fechaFin || fechaMovimiento <= fechaFin)
+        );
+    });
 
     actualizarResumenGastos(filtrados);
     renderizarGastos(filtrados);
@@ -2292,250 +2147,104 @@ function actualizarResumenGastos(movimientos) {
     const resumen = movimientos.reduce(
         (acumulado, movimiento) => {
             const monto = Number(movimiento.monto || 0);
-
             acumulado.total += monto;
-
-            if (movimiento.origen === 'Manual') {
-                acumulado.operativos += monto;
-            } else {
-                acumulado.compras += monto;
-            }
-
+            if (movimiento.origen === 'Manual') acumulado.operativos += monto;
+            else acumulado.compras += monto;
             return acumulado;
         },
-        {
-            total: 0,
-            compras: 0,
-            operativos: 0
-        }
+        { total: 0, compras: 0, operativos: 0 }
     );
 
-    document.getElementById(
-        'gastos-resumen-total'
-    ).textContent = formatearMoneda(resumen.total);
-
-    document.getElementById(
-        'gastos-resumen-compras'
-    ).textContent = formatearMoneda(resumen.compras);
-
-    document.getElementById(
-        'gastos-resumen-operativos'
-    ).textContent = formatearMoneda(resumen.operativos);
-
-    document.getElementById(
-        'gastos-resumen-movimientos'
-    ).textContent = movimientos.length;
+    document.getElementById('gastos-resumen-total').textContent = formatearMoneda(resumen.total);
+    document.getElementById('gastos-resumen-compras').textContent = formatearMoneda(resumen.compras);
+    document.getElementById('gastos-resumen-operativos').textContent = formatearMoneda(resumen.operativos);
+    document.getElementById('gastos-resumen-movimientos').textContent = movimientos.length;
 }
 
 function renderizarGastos(movimientos) {
-    const tabla = document.getElementById(
-        'tabla-gastos-body'
-    );
-
-    document.getElementById(
-        'gastos-resumen-registros'
-    ).textContent = (
-        `${movimientos.length} de `
-        + `${movimientosGastosGlobal.length} movimiento(s)`
+    const tabla = document.getElementById('tabla-gastos-body');
+    document.getElementById('gastos-resumen-registros').textContent = (
+        `${movimientos.length} de ${movimientosGastosGlobal.length} movimiento(s)`
     );
 
     if (movimientos.length === 0) {
-        tabla.innerHTML = `
-            <tr>
-                <td colspan="10" style="text-align:center;">
-                    No hay gastos que coincidan con los filtros.
-                </td>
-            </tr>
-        `;
+        tabla.innerHTML = '<tr><td colspan="10" style="text-align:center;">No hay gastos que coincidan con los filtros.</td></tr>';
         return;
     }
 
-    tabla.innerHTML = movimientos.map(
-        movimiento => {
-            let claseOrigen = 'badge-warning';
+    tabla.innerHTML = movimientos.map(movimiento => {
+        let claseOrigen = 'badge-warning';
+        if (movimiento.origen === 'Compras') claseOrigen = 'badge-success';
+        if (movimiento.origen === 'Manual') claseOrigen = 'badge-danger';
 
-            if (movimiento.origen === 'Compras') {
-                claseOrigen = 'badge-success';
-            }
+        const incluirHora = String(movimiento.fecha || '').length > 10;
+        const folio = movimiento.referencia
+            || (movimiento.id_gasto ? `Gasto #${movimiento.id_gasto}` : '—');
+        const accion = movimiento.anulable
+            ? `<button type="button" class="btn-table btn-table-state" onclick="anularGastoManual(${Number(movimiento.id_gasto)})">Anular</button>`
+            : '<span class="badge-neutral">Automático</span>';
 
-            if (movimiento.origen === 'Manual') {
-                claseOrigen = 'badge-danger';
-            }
-
-            const incluirHora = String(
-                movimiento.fecha || ''
-            ).length > 10;
-
-            const folio = movimiento.referencia
-                || (
-                    movimiento.id_gasto
-                        ? `Gasto #${movimiento.id_gasto}`
-                        : '—'
-                );
-
-            const accion = movimiento.anulable
-                ? `
-                    <button
-                        type="button"
-                        class="btn-secondary"
-                        onclick="anularGastoManual(${Number(
-                            movimiento.id_gasto
-                        )})"
-                    >
-                        Anular
-                    </button>
-                `
-                : '<span>Automático</span>';
-
-            return `
-                <tr>
-                    <td>
-                        ${formatearFechaCXC(
-                            movimiento.fecha,
-                            incluirHora
-                        )}
-                    </td>
-
-                    <td>
-                        <span class="${claseOrigen}">
-                            ${escaparHTML(movimiento.origen)}
-                        </span>
-                    </td>
-
-                    <td>
-                        ${escaparHTML(movimiento.tipo_gasto)}
-                    </td>
-
-                    <td>
-                        ${escaparHTML(movimiento.categoria)}
-                    </td>
-
-                    <td>
-                        ${escaparHTML(movimiento.concepto)}
-                    </td>
-
-                    <td>${escaparHTML(folio)}</td>
-
-                    <td>
-                        ${escaparHTML(movimiento.metodo_pago)}
-                    </td>
-
-                    <td>
-                        ${escaparHTML(movimiento.notas || '—')}
-                    </td>
-
-                    <td>
-                        <strong>
-                            -${formatearMoneda(movimiento.monto)}
-                        </strong>
-                    </td>
-
-                    <td>${accion}</td>
-                </tr>
-            `;
-        }
-    ).join('');
+        return `
+            <tr>
+                <td>${formatearFechaCXC(movimiento.fecha, incluirHora)}</td>
+                <td><span class="${claseOrigen}">${escaparHTML(movimiento.origen)}</span></td>
+                <td>${escaparHTML(movimiento.tipo_gasto)}</td>
+                <td>${escaparHTML(movimiento.categoria)}</td>
+                <td>${escaparHTML(movimiento.concepto)}</td>
+                <td>${escaparHTML(folio)}</td>
+                <td>${escaparHTML(movimiento.metodo_pago)}</td>
+                <td>${escaparHTML(movimiento.notas || '—')}</td>
+                <td><strong>-${formatearMoneda(movimiento.monto)}</strong></td>
+                <td>${accion}</td>
+            </tr>
+        `;
+    }).join('');
 }
 
 async function guardarGastoManual(event) {
     event.preventDefault();
-
     const sesion = obtenerSesion();
-    const formulario = document.getElementById(
-        'form-gasto'
-    );
-
-    const boton = formulario.querySelector(
-        'button[type="submit"]'
-    );
-
+    const formulario = document.getElementById('form-gasto');
+    const boton = formulario.querySelector('button[type="submit"]');
     if (!sesion) return;
 
     const payload = {
         id_empresa: sesion.id_empresa,
-
-        categoria: document.getElementById(
-            'gasto-categoria'
-        ).value,
-
-        tipo_gasto: document.getElementById(
-            'gasto-tipo'
-        ).value,
-
-        concepto: document.getElementById(
-            'gasto-concepto'
-        ).value.trim(),
-
-        monto: Number(
-            document.getElementById(
-                'gasto-monto'
-            ).value
-        ),
-
-        fecha_gasto: document.getElementById(
-            'gasto-fecha'
-        ).value,
-
-        metodo_pago: document.getElementById(
-            'gasto-metodo'
-        ).value,
-
-        referencia: document.getElementById(
-            'gasto-referencia'
-        ).value.trim() || null,
-
-        notas: document.getElementById(
-            'gasto-notas'
-        ).value.trim() || null
+        categoria: document.getElementById('gasto-categoria').value,
+        tipo_gasto: document.getElementById('gasto-tipo').value,
+        concepto: document.getElementById('gasto-concepto').value.trim(),
+        monto: Number(document.getElementById('gasto-monto').value),
+        fecha_gasto: document.getElementById('gasto-fecha').value,
+        metodo_pago: document.getElementById('gasto-metodo').value,
+        referencia: document.getElementById('gasto-referencia').value.trim() || null,
+        notas: document.getElementById('gasto-notas').value.trim() || null
     };
 
-    if (
-        !payload.categoria
-        || !payload.tipo_gasto
-        || !payload.concepto
-        || !payload.fecha_gasto
-        || !Number.isFinite(payload.monto)
-        || payload.monto <= 0
-    ) {
-        alert(
-            'Completa correctamente los campos obligatorios.'
-        );
+    if (!payload.categoria || !payload.concepto || !payload.fecha_gasto
+        || !Number.isFinite(payload.monto) || payload.monto <= 0) {
+        alert('Completa correctamente los campos obligatorios.');
         return;
     }
 
     boton.disabled = true;
     boton.textContent = 'Guardando...';
-
     try {
         const respuesta = await fetch('/api/gastos', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
-
         const resultado = await respuesta.json();
-
         if (!respuesta.ok || !resultado.exito) {
-            throw new Error(
-                resultado.mensaje
-                || 'No se pudo registrar el gasto.'
-            );
+            throw new Error(mensajeErrorAPI(resultado, 'No se pudo registrar el gasto.'));
         }
 
         alert(resultado.mensaje);
         ocultarFormularioGasto();
         await obtenerGastosAPI();
-
     } catch (error) {
-        console.error(
-            'Error al registrar gasto:',
-            error
-        );
-
+        console.error('Error al registrar gasto:', error);
         alert(error.message);
-
     } finally {
         boton.disabled = false;
         boton.textContent = 'Guardar gasto';
@@ -2544,72 +2253,34 @@ async function guardarGastoManual(event) {
 
 async function anularGastoManual(idGasto) {
     const sesion = obtenerSesion();
-
     if (!sesion || !idGasto) return;
-
-    const confirmar = window.confirm(
-        '¿Anular este gasto? Dejará de contarse en Finanzas.'
-    );
-
-    if (!confirmar) return;
+    if (!window.confirm('¿Anular este gasto? Dejará de contarse en Finanzas.')) return;
 
     try {
-        const respuesta = await fetch(
-            `/api/gastos/${idGasto}/anular`,
-            {
-                method: 'PATCH',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    id_empresa: sesion.id_empresa
-                })
-            }
-        );
-
+        const respuesta = await fetch(`/api/gastos/${idGasto}/anular`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id_empresa: sesion.id_empresa })
+        });
         const resultado = await respuesta.json();
-
         if (!respuesta.ok || !resultado.exito) {
-            throw new Error(
-                resultado.mensaje
-                || 'No se pudo anular el gasto.'
-            );
+            throw new Error(mensajeErrorAPI(resultado, 'No se pudo anular el gasto.'));
         }
 
         alert(resultado.mensaje);
         await obtenerGastosAPI();
-
     } catch (error) {
-        console.error(
-            'Error al anular gasto:',
-            error
-        );
-
+        console.error('Error al anular gasto:', error);
         alert(error.message);
     }
 }
 
 function restablecerFiltrosGastos() {
-    document.getElementById(
-        'gastos-busqueda'
-    ).value = '';
-
-    document.getElementById(
-        'gastos-filtro-origen'
-    ).value = 'todos';
-
-    document.getElementById(
-        'gastos-filtro-tipo'
-    ).value = 'todos';
-
-    document.getElementById(
-        'gastos-filtro-categoria'
-    ).value = 'todos';
-
-    document.getElementById(
-        'gastos-filtro-metodo'
-    ).value = 'todos';
-
+    document.getElementById('gastos-busqueda').value = '';
+    document.getElementById('gastos-filtro-origen').value = 'todos';
+    document.getElementById('gastos-filtro-tipo').value = 'todos';
+    document.getElementById('gastos-filtro-categoria').value = 'todos';
+    document.getElementById('gastos-filtro-metodo').value = 'todos';
     establecerMesActualGastos();
     filtrarGastos();
 }

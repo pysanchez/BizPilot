@@ -1,10 +1,9 @@
 import os
-from pathlib import Path
-from dotenv import load_dotenv
+from datetime import date, datetime, timezone
 from supabase import create_client, Client
+from dotenv import load_dotenv
 
-RUTA_ENV = Path(__file__).resolve().parent / ".env"
-load_dotenv(dotenv_path=RUTA_ENV)
+load_dotenv()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
@@ -14,10 +13,7 @@ if not SUPABASE_URL or not SUPABASE_KEY:
         "Faltan las variables SUPABASE_URL o SUPABASE_KEY"
     )
 
-supabase: Client = create_client(
-    SUPABASE_URL,
-    SUPABASE_KEY
-)
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # --- USUARIOS Y EMPRESAS ---
 def obtener_empresas():
@@ -111,7 +107,11 @@ def registrar_venta(
             "Si se pagará el total, registra la venta como Contado",
             "La venta supera el crédito disponible del cliente",
             "Producto no encontrado",
-            "Stock insuficiente"
+            "Stock insuficiente",
+            "El tipo de producto no es válido",
+            "Escribe el nombre del producto de venta rápida",
+            "El precio de una venta rápida debe ser mayor a cero",
+            "El proveedor de la venta rápida no pertenece a esta empresa"
         ]
         for mensaje in mensajes_controlados:
             if mensaje in texto_error:
@@ -124,6 +124,29 @@ def obtener_historial_ventas(id_empresa):
         return response.data
     except Exception as e:
         return []
+
+def obtener_compras_clientes(id_empresa):
+    try:
+        response = supabase.table("ventas") \
+            .select(
+                "id_venta,id_cliente,cliente,total,tipo_venta,estado_pago,fecha,"
+                "ventas_detalle("
+                "id_producto,nombre_producto,tipo_item,cantidad,"
+                "precio_unitario,subtotal,lugar_compra,productos(nombre,sku)"
+                ")"
+            ) \
+            .eq("id_empresa", id_empresa) \
+            .order("fecha", desc=True) \
+            .execute()
+
+        return [
+            venta
+            for venta in (response.data or [])
+            if venta.get("id_cliente") is not None
+        ]
+    except Exception as e:
+        print(f"Error al obtener compras de clientes: {e}")
+        return None
 
 # --- CLIENTES ---
 def obtener_clientes(id_empresa):
@@ -227,8 +250,36 @@ def crear_proveedor(datos_proveedor):
         return {"exito": False, "mensaje": "No se pudo guardar el proveedor"}
 
 # --- COMPRAS ---
-def registrar_compra(id_empresa, id_proveedor, carrito, total, tipo_compra="Contado", dias_credito=0, monto_pagado=0.0, metodo_pago="Transferencia"):
+def registrar_compra(
+    id_empresa,
+    id_proveedor,
+    lugar_compra,
+    carrito,
+    total,
+    tipo_compra="Contado",
+    dias_credito=0,
+    monto_pagado=0.0,
+    metodo_pago="Transferencia"
+):
     try:
+        if id_proveedor is not None:
+            proveedor = supabase.table("proveedores") \
+                .select("id_proveedor") \
+                .eq("id_proveedor", id_proveedor) \
+                .eq("id_empresa", id_empresa) \
+                .limit(1) \
+                .execute()
+            if not proveedor.data:
+                return {
+                    "exito": False,
+                    "mensaje": "El proveedor seleccionado no pertenece a esta empresa"
+                }
+        elif not lugar_compra:
+            return {
+                "exito": False,
+                "mensaje": "Selecciona un proveedor o escribe dónde se compró"
+            }
+
         monto_inicial = float(monto_pagado) if tipo_compra == "Credito" else total
         estado_pago = "Pagado" if monto_inicial >= total else "Pendiente"
         dias = dias_credito if tipo_compra == "Credito" else 0
@@ -236,6 +287,7 @@ def registrar_compra(id_empresa, id_proveedor, carrito, total, tipo_compra="Cont
         res_compra = supabase.table("compras").insert({
             "id_empresa": id_empresa,
             "id_proveedor": id_proveedor,
+            "lugar_compra": lugar_compra,
             "total": total,
             "tipo_compra": tipo_compra,
             "estado_pago": estado_pago,
@@ -268,13 +320,27 @@ def registrar_compra(id_empresa, id_proveedor, carrito, total, tipo_compra="Cont
                 }).execute()
                 id_producto = res_nuevo.data[0]["id_producto"]
             else:
-                prod_db = supabase.table("productos").select("stock").eq("id_producto", id_producto).execute()
+                prod_db = supabase.table("productos") \
+                    .select("stock") \
+                    .eq("id_producto", id_producto) \
+                    .eq("id_empresa", id_empresa) \
+                    .limit(1) \
+                    .execute()
+                if not prod_db.data:
+                    raise ValueError("Producto no encontrado en esta empresa")
                 nuevo_stock = prod_db.data[0]["stock"] + item["cantidad"]
-                supabase.table("productos").update({
+                datos_actualizacion = {
                     "stock": nuevo_stock,
-                    "precio_compra": item["precio_compra"],
-                    "id_proveedor": id_proveedor
-                }).eq("id_producto", id_producto).execute()
+                    "precio_compra": item["precio_compra"]
+                }
+                if id_proveedor is not None:
+                    datos_actualizacion["id_proveedor"] = id_proveedor
+
+                supabase.table("productos") \
+                    .update(datos_actualizacion) \
+                    .eq("id_producto", id_producto) \
+                    .eq("id_empresa", id_empresa) \
+                    .execute()
 
             supabase.table("compras_detalle").insert({
                 "id_compra": id_compra,
@@ -288,6 +354,155 @@ def registrar_compra(id_empresa, id_proveedor, carrito, total, tipo_compra="Cont
     except Exception as e:
         print(f"Error al registrar compra: {e}")
         return {"exito": False, "mensaje": "No se pudo procesar la compra"}
+
+# --- GASTOS Y SALIDAS ---
+def _fecha_compra(compra, pagos):
+    fecha = (
+        compra.get("fecha")
+        or compra.get("fecha_compra")
+        or compra.get("created_at")
+    )
+    if fecha:
+        return fecha
+    if pagos:
+        return pagos[0].get("fecha_pago") or date.today().isoformat()
+    return date.today().isoformat()
+
+def _origen_compra(compra):
+    proveedor = compra.get("proveedores") or {}
+    return (
+        proveedor.get("nombre")
+        or compra.get("lugar_compra")
+        or "Sin proveedor"
+    )
+
+def obtener_gastos(id_empresa):
+    try:
+        movimientos = []
+
+        gastos = supabase.table("gastos") \
+            .select("*") \
+            .eq("id_empresa", id_empresa) \
+            .eq("activo", True) \
+            .order("fecha_gasto", desc=True) \
+            .execute()
+
+        for gasto in gastos.data or []:
+            movimientos.append({
+                "id_gasto": gasto.get("id_gasto"),
+                "id_compra": None,
+                "origen": "Manual",
+                "tipo_gasto": gasto.get("tipo_gasto") or "Variable",
+                "categoria": gasto.get("categoria") or "Otro",
+                "concepto": gasto.get("concepto") or "Gasto manual",
+                "monto": float(gasto.get("monto") or 0),
+                "fecha": gasto.get("fecha_gasto"),
+                "metodo_pago": gasto.get("metodo_pago") or "Otro",
+                "referencia": gasto.get("referencia"),
+                "notas": gasto.get("notas"),
+                "anulable": True
+            })
+
+        compras = supabase.table("compras") \
+            .select("*, proveedores(nombre), pagos_cxp(*)") \
+            .eq("id_empresa", id_empresa) \
+            .execute()
+
+        for compra in compras.data or []:
+            pagos = sorted(
+                compra.get("pagos_cxp") or [],
+                key=lambda pago: str(pago.get("fecha_pago") or "")
+            )
+            origen = _origen_compra(compra)
+            tipo_compra = str(compra.get("tipo_compra") or "Contado").lower()
+
+            if tipo_compra.startswith("cred"):
+                for pago in pagos:
+                    id_pago = pago.get("id_pago_cxp") or pago.get("id_pago")
+                    referencia = f"Compra #{compra.get('id_compra')}"
+                    if id_pago:
+                        referencia += f" · Pago #{id_pago}"
+
+                    movimientos.append({
+                        "id_gasto": None,
+                        "id_compra": compra.get("id_compra"),
+                        "origen": "CxP",
+                        "tipo_gasto": "Variable",
+                        "categoria": "Proveedores",
+                        "concepto": f"Pago a proveedor · {origen}",
+                        "monto": float(pago.get("monto") or 0),
+                        "fecha": pago.get("fecha_pago") or _fecha_compra(compra, pagos),
+                        "metodo_pago": pago.get("metodo_pago") or "No especificado",
+                        "referencia": referencia,
+                        "notas": "Pago aplicado a una compra a crédito",
+                        "anulable": False
+                    })
+            else:
+                pago = pagos[0] if pagos else {}
+                movimientos.append({
+                    "id_gasto": None,
+                    "id_compra": compra.get("id_compra"),
+                    "origen": "Compras",
+                    "tipo_gasto": "Variable",
+                    "categoria": "Compras de inventario",
+                    "concepto": f"Compra de contado · {origen}",
+                    "monto": float(compra.get("total") or 0),
+                    "fecha": _fecha_compra(compra, pagos),
+                    "metodo_pago": pago.get("metodo_pago") or "No especificado",
+                    "referencia": f"Compra #{compra.get('id_compra')}",
+                    "notas": "Entrada de mercancía pagada de contado",
+                    "anulable": False
+                })
+
+        return sorted(
+            movimientos,
+            key=lambda movimiento: str(movimiento.get("fecha") or ""),
+            reverse=True
+        )
+    except Exception as e:
+        print(f"Error al obtener gastos: {e}")
+        return None
+
+def crear_gasto_manual(datos_gasto):
+    try:
+        datos = {**datos_gasto, "activo": True}
+        response = supabase.table("gastos").insert(datos).execute()
+        gasto = response.data[0] if response.data else None
+        return {
+            "exito": True,
+            "mensaje": "Gasto registrado correctamente",
+            "data": gasto
+        }
+    except Exception as e:
+        print(f"Error al crear gasto manual: {e}")
+        return {"exito": False, "mensaje": "No se pudo registrar el gasto"}
+
+def anular_gasto_manual(id_gasto, id_empresa):
+    try:
+        existente = supabase.table("gastos") \
+            .select("id_gasto") \
+            .eq("id_gasto", id_gasto) \
+            .eq("id_empresa", id_empresa) \
+            .eq("activo", True) \
+            .limit(1) \
+            .execute()
+
+        if not existente.data:
+            return {"exito": False, "mensaje": "El gasto no existe o ya fue anulado"}
+
+        supabase.table("gastos") \
+            .update({
+                "activo": False,
+                "fecha_anulacion": datetime.now(timezone.utc).isoformat()
+            }) \
+            .eq("id_gasto", id_gasto) \
+            .eq("id_empresa", id_empresa) \
+            .execute()
+
+        return {"exito": True, "mensaje": "Gasto anulado correctamente"}
+    except Exception as e:
+        print(f"Error al anular gasto manual: {e}")
+        return {"exito": False, "mensaje": "No se pudo anular el gasto"}
 
 # --- CUENTAS POR PAGAR (CXP) ---
 def obtener_cuentas_por_pagar(id_empresa):
@@ -372,274 +587,3 @@ def registrar_abono_cxc(id_empresa, id_venta, monto, metodo_pago, referencia=Non
             if mensaje in texto_error:
                 return {"exito": False, "mensaje": mensaje}
         return {"exito": False, "mensaje": "No se pudo registrar el cobro"}
-    
-# --- INGRESOS Y COBROS ---
-def _obtener_registros_paginados(construir_consulta, tamano_lote=1000):
-    registros = []
-    inicio = 0
-
-    while True:
-        fin = inicio + tamano_lote - 1
-        response = construir_consulta().range(inicio, fin).execute()
-        lote = response.data or []
-        registros.extend(lote)
-
-        if len(lote) < tamano_lote:
-            break
-
-        inicio += tamano_lote
-
-    return registros
-
-
-def obtener_ingresos_y_cobros(id_empresa):
-    try:
-        ventas_contado = _obtener_registros_paginados(
-            lambda: supabase.table("ventas")
-                .select("id_venta,id_cliente,cliente,total,metodo_pago,fecha")
-                .eq("id_empresa", id_empresa)
-                .eq("tipo_venta", "Contado")
-                .order("fecha", desc=True)
-        )
-
-        pagos_credito = _obtener_registros_paginados(
-            lambda: supabase.table("pagos_cxc")
-                .select(
-                    "id_pago_cxc,id_venta,monto,metodo_pago,"
-                    "referencia,notas,fecha_pago,ventas!inner(cliente,id_cliente)"
-                )
-                .eq("id_empresa", id_empresa)
-                .order("fecha_pago", desc=True)
-        )
-
-        movimientos = []
-
-        for venta in ventas_contado:
-            movimientos.append({
-                "id_movimiento": f"venta-{venta['id_venta']}",
-                "origen": "Contado",
-                "tipo": "Venta de contado",
-                "id_venta": venta["id_venta"],
-                "id_cliente": venta.get("id_cliente"),
-                "cliente": venta.get("cliente") or "Público general",
-                "monto": float(venta.get("total") or 0),
-                "metodo_pago": venta.get("metodo_pago") or "No especificado",
-                "referencia": None,
-                "notas": None,
-                "fecha": venta.get("fecha")
-            })
-
-        for pago in pagos_credito:
-            venta_relacionada = pago.get("ventas") or {}
-
-            if isinstance(venta_relacionada, list):
-                venta_relacionada = (
-                    venta_relacionada[0]
-                    if venta_relacionada
-                    else {}
-                )
-
-            es_abono_inicial = pago.get("referencia") == "Abono inicial"
-
-            movimientos.append({
-                "id_movimiento": f"cxc-{pago['id_pago_cxc']}",
-                "origen": "Credito",
-                "tipo": "Abono inicial" if es_abono_inicial else "Cobro CxC",
-                "id_venta": pago["id_venta"],
-                "id_cliente": venta_relacionada.get("id_cliente"),
-                "cliente": (
-                    venta_relacionada.get("cliente")
-                    or "Cliente no identificado"
-                ),
-                "monto": float(pago.get("monto") or 0),
-                "metodo_pago": (
-                    pago.get("metodo_pago")
-                    or "No especificado"
-                ),
-                "referencia": pago.get("referencia"),
-                "notas": pago.get("notas"),
-                "fecha": pago.get("fecha_pago")
-            })
-
-        movimientos.sort(
-            key=lambda movimiento: movimiento.get("fecha") or "",
-            reverse=True
-        )
-
-        return movimientos
-
-    except Exception as e:
-        print(f"Error al obtener ingresos y cobros: {e}")
-        return None
-
-# --- GASTOS Y SALIDAS ---
-def registrar_gasto_operativo(
-    id_empresa,
-    categoria,
-    tipo_gasto,
-    concepto,
-    monto,
-    fecha_gasto,
-    metodo_pago,
-    referencia=None,
-    notas=None
-):
-    try:
-        response = supabase.table("gastos_operativos").insert({
-            "id_empresa": id_empresa,
-            "categoria": categoria,
-            "tipo_gasto": tipo_gasto,
-            "concepto": concepto,
-            "monto": monto,
-            "fecha_gasto": fecha_gasto,
-            "metodo_pago": metodo_pago,
-            "referencia": referencia,
-            "notas": notas
-        }).execute()
-
-        if not response.data:
-            return {
-                "exito": False,
-                "mensaje": "Supabase no devolvió el gasto registrado"
-            }
-
-        return {
-            "exito": True,
-            "mensaje": "Gasto registrado correctamente",
-            "data": response.data[0]
-        }
-
-    except Exception as e:
-        print(f"Error al registrar gasto operativo: {e}")
-        return {
-            "exito": False,
-            "mensaje": "No se pudo registrar el gasto"
-        }
-
-
-def anular_gasto_operativo(id_empresa, id_gasto):
-    try:
-        response = supabase.table("gastos_operativos") \
-            .update({"activo": False}) \
-            .eq("id_empresa", id_empresa) \
-            .eq("id_gasto", id_gasto) \
-            .eq("activo", True) \
-            .execute()
-
-        if not response.data:
-            return {
-                "exito": False,
-                "mensaje": "El gasto no existe o ya fue anulado"
-            }
-
-        return {
-            "exito": True,
-            "mensaje": "Gasto anulado correctamente"
-        }
-
-    except Exception as e:
-        print(f"Error al anular gasto operativo: {e}")
-        return {
-            "exito": False,
-            "mensaje": "No se pudo anular el gasto"
-        }
-
-
-def obtener_gastos(id_empresa):
-    try:
-        pagos_compras = _obtener_registros_paginados(
-            lambda: supabase.table("pagos_cxp")
-                .select(
-                    "id_compra,monto,metodo_pago,fecha_pago,"
-                    "compras!inner("
-                    "id_empresa,tipo_compra,proveedores(nombre)"
-                    ")"
-                )
-                .eq("compras.id_empresa", id_empresa)
-                .order("fecha_pago", desc=True)
-        )
-
-        gastos_manuales = _obtener_registros_paginados(
-            lambda: supabase.table("gastos_operativos")
-                .select(
-                    "id_gasto,categoria,tipo_gasto,concepto,monto,"
-                    "fecha_gasto,metodo_pago,referencia,notas"
-                )
-                .eq("id_empresa", id_empresa)
-                .eq("activo", True)
-                .order("fecha_gasto", desc=True)
-        )
-
-        movimientos = []
-
-        for indice, pago in enumerate(pagos_compras):
-            compra = pago.get("compras") or {}
-
-            if isinstance(compra, list):
-                compra = compra[0] if compra else {}
-
-            proveedor = compra.get("proveedores") or {}
-
-            if isinstance(proveedor, list):
-                proveedor = proveedor[0] if proveedor else {}
-
-            es_contado = compra.get("tipo_compra") == "Contado"
-            id_compra = pago.get("id_compra")
-
-            movimientos.append({
-                "id_movimiento": f"pago-cxp-{id_compra}-{indice}",
-                "id_gasto": None,
-                "id_compra": id_compra,
-                "origen": "Compras" if es_contado else "CxP",
-                "tipo_gasto": "Variable",
-                "categoria": "Compras e inventario",
-                "concepto": (
-                    "Compra de contado"
-                    if es_contado
-                    else "Pago a proveedor"
-                ),
-                "monto": float(pago.get("monto") or 0),
-                "metodo_pago": (
-                    pago.get("metodo_pago")
-                    or "No especificado"
-                ),
-                "referencia": f"Compra #{id_compra}",
-                "notas": (
-                    f"Proveedor: {proveedor.get('nombre')}"
-                    if proveedor.get("nombre")
-                    else None
-                ),
-                "fecha": pago.get("fecha_pago"),
-                "anulable": False
-            })
-
-        for gasto in gastos_manuales:
-            movimientos.append({
-                "id_movimiento": f"gasto-{gasto['id_gasto']}",
-                "id_gasto": gasto["id_gasto"],
-                "id_compra": None,
-                "origen": "Manual",
-                "tipo_gasto": gasto.get("tipo_gasto") or "Variable",
-                "categoria": gasto.get("categoria") or "Otros",
-                "concepto": gasto.get("concepto") or "Sin concepto",
-                "monto": float(gasto.get("monto") or 0),
-                "metodo_pago": (
-                    gasto.get("metodo_pago")
-                    or "No especificado"
-                ),
-                "referencia": gasto.get("referencia"),
-                "notas": gasto.get("notas"),
-                "fecha": gasto.get("fecha_gasto"),
-                "anulable": True
-            })
-
-        movimientos.sort(
-            key=lambda movimiento: movimiento.get("fecha") or "",
-            reverse=True
-        )
-
-        return movimientos
-
-    except Exception as e:
-        print(f"Error al obtener gastos: {e}")
-        return None

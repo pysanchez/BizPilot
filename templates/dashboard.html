@@ -11,7 +11,7 @@
         <div class="topbar">
             <div class="brand">
                 <h2>BizPilot</h2>
-                <span>Solutions</span>
+                <span>Suite Empresarial</span>
             </div>
 
             <div class="session-controls">
@@ -84,12 +84,72 @@
             
             <div class="pos-layout">
                 <div class="pos-catalogo">
+                    <div class="pos-quick-actions">
+                        <div>
+                            <strong>Venta sin inventario</strong>
+                            <span>Agrega al ticket un producto que no está registrado en almacén.</span>
+                        </div>
+                        <button type="button" class="btn-primary" onclick="mostrarVentaRapida()">
+                            + Venta rápida
+                        </button>
+                    </div>
+
+                    <div id="form-venta-rapida" class="card-form quick-sale-form oculto">
+                        <div class="quick-sale-heading">
+                            <div>
+                                <p class="eyebrow">Producto libre</p>
+                                <h3>Agregar venta rápida</h3>
+                            </div>
+                            <button type="button" class="btn-secondary" onclick="ocultarVentaRapida()">Cerrar</button>
+                        </div>
+
+                        <form id="formVentaRapida" onsubmit="agregarVentaRapida(event)">
+                            <div class="form-grid quick-sale-grid">
+                                <div class="input-group quick-sale-name">
+                                    <label for="venta-rapida-nombre">Producto</label>
+                                    <input type="text" id="venta-rapida-nombre" maxlength="160" required placeholder="Ej. Crema facial">
+                                </div>
+                                <div class="input-group">
+                                    <label for="venta-rapida-cantidad">Cantidad</label>
+                                    <input type="number" id="venta-rapida-cantidad" min="1" step="1" value="1" required>
+                                </div>
+                                <div class="input-group">
+                                    <label for="venta-rapida-precio">Precio de venta</label>
+                                    <input type="number" id="venta-rapida-precio" min="0.01" step="0.01" required placeholder="0.00">
+                                </div>
+                                <div class="input-group">
+                                    <label for="venta-rapida-costo">Costo unitario (opcional)</label>
+                                    <input type="number" id="venta-rapida-costo" min="0" step="0.01" value="0">
+                                </div>
+                                <div class="input-group">
+                                    <label for="venta-rapida-proveedor">Proveedor (opcional)</label>
+                                    <select id="venta-rapida-proveedor">
+                                        <option value="">Sin proveedor registrado</option>
+                                    </select>
+                                </div>
+                                <div class="input-group">
+                                    <label for="venta-rapida-lugar">Dónde se compró (opcional)</label>
+                                    <input type="text" id="venta-rapida-lugar" maxlength="160" placeholder="Tienda, mercado o contacto">
+                                </div>
+                            </div>
+                            <div class="form-actions">
+                                <button type="submit" class="btn-primary">Agregar al ticket</button>
+                                <button type="button" class="btn-secondary" onclick="ocultarVentaRapida()">Cancelar</button>
+                            </div>
+                        </form>
+                    </div>
+
                     <input type="text" id="pos-buscador" class="pos-input-busqueda" placeholder="Buscar por nombre o SKU..." onkeyup="filtrarPOS()">
                     <div class="pos-grid" id="pos-grid-productos"></div>
                 </div>
 
                 <div class="pos-ticket">
                     <h3>Ticket Actual</h3>
+
+                    <div class="pos-lista-carrito" id="pos-lista-carrito">
+                        <p style="text-align:center; color:#9ca3af; margin-top:2rem;">El carrito está vacío</p>
+                    </div>
+
                     <div class="input-group" style="margin-bottom: 0.75rem;">
                         <label>Cliente</label>
                         <select id="pos-cliente" onchange="actualizarCondicionesVenta()">
@@ -122,10 +182,6 @@
                             <input type="number" id="pos-abono-inicial" min="0" step="0.01" value="0" oninput="actualizarResumenCreditoVenta()">
                         </div>
                         <p id="pos-credito-resumen" class="credit-sale-summary">Saldo por cobrar: $0.00</p>
-                    </div>
-                    
-                    <div class="pos-lista-carrito" id="pos-lista-carrito">
-                        <p style="text-align:center; color:#9ca3af; margin-top:2rem;">El carrito esta vacio</p>
                     </div>
                     
                     <div class="pos-totales">
@@ -269,13 +325,18 @@
             <div class="pos-layout">
                 <div class="pos-catalogo">
                     <div class="input-group" style="margin-bottom: 1rem;">
-                        <label>1. Selecciona el Proveedor</label>
-                        <select id="compra-proveedor" class="pos-input-busqueda" style="margin-bottom: 0;">
+                        <label>1. Proveedor registrado (opcional)</label>
+                        <select id="compra-proveedor" class="pos-input-busqueda" style="margin-bottom: 0;" onchange="actualizarOrigenCompra()">
                             <option value="">Cargando proveedores...</option>
                         </select>
                     </div>
 
-                    <label style="font-size: 0.85rem; font-weight: 600; color: #374151;">2. O Selecciona un Producto Existente para Reabastecer</label>
+                    <div class="input-group" style="margin-bottom: 1rem;">
+                        <label for="compra-lugar">Dónde se compró</label>
+                        <input type="text" id="compra-lugar" maxlength="160" placeholder="Obligatorio si no seleccionas proveedor">
+                    </div>
+
+                    <label style="font-size: 0.85rem; font-weight: 600; color: #374151;">2. Selecciona un producto existente para reabastecer</label>
                     <input type="text" id="compra-buscador" class="pos-input-busqueda" placeholder="Buscar por nombre o SKU..." onkeyup="filtrarCompraProductos()" style="margin-top: 0.5rem;">
                     
                     <div class="pos-grid" id="compra-grid-productos"></div>
@@ -332,315 +393,149 @@
             <p>Dashboard financiero en construcción...</p>
         </div>
 
-                <div id="vista-fin-gastos" class="module-container oculto">
+        <div id="vista-fin-gastos" class="module-container oculto">
             <div class="modulo-header">
-                <div>
-                    <h2>Gastos</h2>
-                    <p>Salidas de Compras, CxP y gastos operativos.</p>
-                </div>
-            
-                <button
-                    type="button"
-                    class="btn-primary"
-                    onclick="mostrarFormularioGasto()"
-                >
-                    + Registrar gasto
-                </button>
+                <h2>Gastos</h2>
+                <button type="button" class="btn-primary" onclick="mostrarFormularioGasto()">+ Registrar gasto</button>
             </div>
-        
-            <div
-                id="form-gasto-container"
-                class="card-form oculto"
-            >
-                <h3>Registrar gasto operativo</h3>
-        
-                <form
-                    id="form-gasto"
-                    onsubmit="guardarGastoManual(event)"
-                >
+
+            <div id="form-gasto-container" class="card-form oculto">
+                <h3>Registrar gasto manual</h3>
+                <form id="form-gasto" onsubmit="guardarGastoManual(event)">
                     <div class="form-grid">
                         <div class="input-group">
-                            <label for="gasto-categoria">
-                                Categoría
-                            </label>
-                        
-                            <select
-                                id="gasto-categoria"
-                                required
-                            >
-                                <option value="">
-                                    Selecciona una categoría
-                                </option>
-                                <option value="Agua">Agua</option>
-                                <option value="Luz">Luz</option>
-                                <option value="Gas">Gas</option>
+                            <label for="gasto-categoria">Categoría</label>
+                            <select id="gasto-categoria" required>
+                                <option value="">Selecciona una categoría</option>
                                 <option value="Renta">Renta</option>
-                                <option value="Internet y telefonía">
-                                    Internet y telefonía
-                                </option>
+                                <option value="Servicios">Servicios</option>
                                 <option value="Nómina">Nómina</option>
-                                <option value="Transporte y gasolina">
-                                    Transporte y gasolina
-                                </option>
-                                <option value="Mantenimiento">
-                                    Mantenimiento
-                                </option>
-                                <option value="Papelería e insumos">
-                                    Papelería e insumos
-                                </option>
-                                <option value="Marketing">
-                                    Marketing
-                                </option>
-                                <option value="Impuestos">
-                                    Impuestos
-                                </option>
-                                <option value="Comisiones bancarias">
-                                    Comisiones bancarias
-                                </option>
-                                <option value="Imprevistos">
-                                    Imprevistos
-                                </option>
-                                <option value="Otros">Otros</option>
+                                <option value="Transporte">Transporte</option>
+                                <option value="Marketing">Marketing</option>
+                                <option value="Mantenimiento">Mantenimiento</option>
+                                <option value="Impuestos">Impuestos</option>
+                                <option value="Otro">Otro</option>
                             </select>
                         </div>
-                    
+
                         <div class="input-group">
-                            <label for="gasto-tipo">
-                                Tipo de gasto
-                            </label>
-                        
+                            <label for="gasto-tipo">Tipo de gasto</label>
                             <select id="gasto-tipo" required>
-                                <option value="">
-                                    Selecciona el tipo
-                                </option>
                                 <option value="Fijo">Fijo</option>
                                 <option value="Variable">Variable</option>
                             </select>
                         </div>
-                    
+
                         <div class="input-group">
-                            <label for="gasto-concepto">
-                                Concepto
-                            </label>
-                        
-                            <input
-                                type="text"
-                                id="gasto-concepto"
-                                minlength="2"
-                                maxlength="120"
-                                placeholder="Ej. Recibo de luz de agosto"
-                                required
-                            >
+                            <label for="gasto-concepto">Concepto</label>
+                            <input type="text" id="gasto-concepto" minlength="2" maxlength="160" required placeholder="Ej. Recibo de luz">
                         </div>
-                    
+
                         <div class="input-group">
-                            <label for="gasto-monto">
-                                Monto
-                            </label>
-                        
-                            <input
-                                type="number"
-                                id="gasto-monto"
-                                min="0.01"
-                                step="0.01"
-                                required
-                            >
+                            <label for="gasto-monto">Monto</label>
+                            <input type="number" id="gasto-monto" min="0.01" step="0.01" required>
                         </div>
-                    
+
                         <div class="input-group">
-                            <label for="gasto-fecha">
-                                Fecha del gasto
-                            </label>
-                        
-                            <input
-                                type="date"
-                                id="gasto-fecha"
-                                required
-                            >
+                            <label for="gasto-fecha">Fecha del gasto</label>
+                            <input type="date" id="gasto-fecha" required>
                         </div>
-                    
+
                         <div class="input-group">
-                            <label for="gasto-metodo">
-                                Método de pago
-                            </label>
-                        
+                            <label for="gasto-metodo">Método de pago</label>
                             <select id="gasto-metodo" required>
                                 <option value="Efectivo">Efectivo</option>
-                                <option value="Transferencia">
-                                    Transferencia
-                                </option>
+                                <option value="Transferencia">Transferencia</option>
                                 <option value="Tarjeta">Tarjeta</option>
                                 <option value="Deposito">Depósito</option>
                                 <option value="Otro">Otro</option>
                             </select>
                         </div>
-                    
+
                         <div class="input-group">
-                            <label for="gasto-referencia">
-                                Referencia
-                            </label>
-                        
-                            <input
-                                type="text"
-                                id="gasto-referencia"
-                                maxlength="80"
-                                placeholder="Folio, transferencia, recibo..."
-                            >
+                            <label for="gasto-referencia">Referencia</label>
+                            <input type="text" id="gasto-referencia" maxlength="80" placeholder="Folio, transferencia, recibo...">
                         </div>
-                    
+
                         <div class="input-group">
-                            <label for="gasto-notas">
-                                Notas
-                            </label>
-                        
-                            <textarea
-                                id="gasto-notas"
-                                maxlength="250"
-                                rows="3"
-                                placeholder="Información adicional"
-                            ></textarea>
+                            <label for="gasto-notas">Notas</label>
+                            <textarea id="gasto-notas" maxlength="250" rows="3" placeholder="Información adicional"></textarea>
                         </div>
                     </div>
-                
+
                     <div class="form-actions">
-                        <button
-                            type="submit"
-                            class="btn-primary"
-                        >
-                            Guardar gasto
-                        </button>
-                    
-                        <button
-                            type="button"
-                            class="btn-secondary"
-                            onclick="ocultarFormularioGasto()"
-                        >
-                            Cancelar
-                        </button>
+                        <button type="submit" class="btn-primary">Guardar gasto</button>
+                        <button type="button" class="btn-secondary" onclick="ocultarFormularioGasto()">Cancelar</button>
                     </div>
                 </form>
             </div>
-        
-            <div
-                class="finance-summary-grid"
-                aria-label="Resumen de gastos"
-            >
-                <article class="finance-summary-card">
+
+            <div class="finance-summary-grid" aria-label="Resumen de gastos">
+                <article class="finance-summary-card danger">
                     <span>Total de salidas</span>
                     <strong id="gastos-resumen-total">$0.00</strong>
                 </article>
-            
                 <article class="finance-summary-card">
                     <span>Compras y CxP</span>
                     <strong id="gastos-resumen-compras">$0.00</strong>
                 </article>
-            
                 <article class="finance-summary-card">
                     <span>Gastos operativos</span>
                     <strong id="gastos-resumen-operativos">$0.00</strong>
                 </article>
-            
                 <article class="finance-summary-card">
                     <span>Movimientos</span>
                     <strong id="gastos-resumen-movimientos">0</strong>
                 </article>
             </div>
-        
-            <div
-                class="client-filters"
-                aria-label="Filtros de gastos"
-            >
+
+            <div class="client-filters" aria-label="Filtros de gastos">
                 <div class="input-group">
                     <label for="gastos-fecha-inicio">Desde</label>
-                    <input
-                        type="date"
-                        id="gastos-fecha-inicio"
-                        onchange="filtrarGastos()"
-                    >
+                    <input type="date" id="gastos-fecha-inicio" onchange="filtrarGastos()">
                 </div>
-            
                 <div class="input-group">
                     <label for="gastos-fecha-fin">Hasta</label>
-                    <input
-                        type="date"
-                        id="gastos-fecha-fin"
-                        onchange="filtrarGastos()"
-                    >
+                    <input type="date" id="gastos-fecha-fin" onchange="filtrarGastos()">
                 </div>
-            
                 <div class="input-group">
                     <label for="gastos-filtro-origen">Origen</label>
-                    <select
-                        id="gastos-filtro-origen"
-                        onchange="filtrarGastos()"
-                    >
+                    <select id="gastos-filtro-origen" onchange="filtrarGastos()">
                         <option value="todos">Todos</option>
                         <option value="Compras">Compras</option>
                         <option value="CxP">Cuentas por pagar</option>
                         <option value="Manual">Captura manual</option>
                     </select>
                 </div>
-            
                 <div class="input-group">
                     <label for="gastos-filtro-tipo">Tipo</label>
-                    <select
-                        id="gastos-filtro-tipo"
-                        onchange="filtrarGastos()"
-                    >
+                    <select id="gastos-filtro-tipo" onchange="filtrarGastos()">
                         <option value="todos">Todos</option>
                         <option value="Fijo">Fijo</option>
                         <option value="Variable">Variable</option>
                     </select>
                 </div>
-            
                 <div class="input-group">
-                    <label for="gastos-filtro-categoria">
-                        Categoría
-                    </label>
-                
-                    <select
-                        id="gastos-filtro-categoria"
-                        onchange="filtrarGastos()"
-                    >
+                    <label for="gastos-filtro-categoria">Categoría</label>
+                    <select id="gastos-filtro-categoria" onchange="filtrarGastos()">
                         <option value="todos">Todas</option>
                     </select>
                 </div>
-            
                 <div class="input-group">
                     <label for="gastos-filtro-metodo">Método</label>
-                    <select
-                        id="gastos-filtro-metodo"
-                        onchange="filtrarGastos()"
-                    >
+                    <select id="gastos-filtro-metodo" onchange="filtrarGastos()">
                         <option value="todos">Todos</option>
                     </select>
                 </div>
-            
                 <div class="input-group client-search">
                     <label for="gastos-busqueda">Buscar</label>
-                    <input
-                        type="search"
-                        id="gastos-busqueda"
-                        placeholder="Concepto, folio o notas"
-                        oninput="filtrarGastos()"
-                    >
+                    <input type="search" id="gastos-busqueda" placeholder="Concepto, folio o notas" oninput="filtrarGastos()">
                 </div>
-            
-                <button
-                    type="button"
-                    class="btn-secondary client-refresh"
-                    onclick="restablecerFiltrosGastos()"
-                >
-                    Este mes
-                </button>
+                <button type="button" class="btn-secondary client-refresh" onclick="restablecerFiltrosGastos()">Este mes</button>
             </div>
-        
-            <p
-                id="gastos-resumen-registros"
-                class="table-summary"
-                aria-live="polite"
-            ></p>
-        
+
+            <p id="gastos-resumen-registros" class="table-summary" aria-live="polite"></p>
+
             <div class="tabla-container">
                 <table class="tabla-custom">
                     <thead>
@@ -657,7 +552,6 @@
                             <th>Acción</th>
                         </tr>
                     </thead>
-                
                     <tbody id="tabla-gastos-body"></tbody>
                 </table>
             </div>
@@ -666,126 +560,8 @@
         <div id="vista-fin-ingresos" class="module-container oculto">
             <div class="modulo-header">
                 <h2>Ingresos y Cobros</h2>
-                <button
-                    type="button"
-                    class="btn-secondary"
-                    onclick="obtenerIngresosAPI()"
-                >
-                    Actualizar movimientos
-                </button>
             </div>
-        
-            <div
-                class="finance-summary-grid"
-                aria-label="Resumen de ingresos y cobros"
-            >
-                <article class="finance-summary-card success">
-                    <span>Total filtrado</span>
-                    <strong id="ingresos-resumen-total">$0.00</strong>
-                </article>
-            
-                <article class="finance-summary-card">
-                    <span>Ventas de contado</span>
-                    <strong id="ingresos-resumen-contado">$0.00</strong>
-                </article>
-            
-                <article class="finance-summary-card">
-                    <span>Cobros de crédito</span>
-                    <strong id="ingresos-resumen-credito">$0.00</strong>
-                </article>
-            
-                <article class="finance-summary-card">
-                    <span>Movimientos</span>
-                    <strong id="ingresos-resumen-movimientos">0</strong>
-                </article>
-            </div>
-        
-            <div
-                class="client-filters"
-                aria-label="Filtros de ingresos y cobros"
-            >
-                <div class="input-group">
-                    <label for="ingresos-fecha-inicio">Desde</label>
-                    <input
-                        type="date"
-                        id="ingresos-fecha-inicio"
-                        onchange="filtrarIngresos()"
-                    >
-                </div>
-            
-                <div class="input-group">
-                    <label for="ingresos-fecha-fin">Hasta</label>
-                    <input
-                        type="date"
-                        id="ingresos-fecha-fin"
-                        onchange="filtrarIngresos()"
-                    >
-                </div>
-            
-                <div class="input-group">
-                    <label for="ingresos-filtro-origen">Origen</label>
-                    <select
-                        id="ingresos-filtro-origen"
-                        onchange="filtrarIngresos()"
-                    >
-                        <option value="todos">Todos</option>
-                        <option value="Contado">Ventas de contado</option>
-                        <option value="Credito">Cobros de crédito</option>
-                    </select>
-                </div>
-            
-                <div class="input-group">
-                    <label for="ingresos-filtro-metodo">Método</label>
-                    <select
-                        id="ingresos-filtro-metodo"
-                        onchange="filtrarIngresos()"
-                    >
-                        <option value="todos">Todos</option>
-                    </select>
-                </div>
-            
-                <div class="input-group client-search">
-                    <label for="ingresos-busqueda">Buscar</label>
-                    <input
-                        type="search"
-                        id="ingresos-busqueda"
-                        placeholder="Folio, cliente o referencia"
-                        oninput="filtrarIngresos()"
-                    >
-                </div>
-            
-                <button
-                    type="button"
-                    class="btn-secondary client-refresh"
-                    onclick="restablecerFiltrosIngresos()"
-                >
-                    Este mes
-                </button>
-            </div>
-        
-            <p
-                id="ingresos-resumen-registros"
-                class="table-summary"
-                aria-live="polite"
-            ></p>
-        
-            <div class="tabla-container">
-                <table class="tabla-custom">
-                    <thead>
-                        <tr>
-                            <th>Fecha</th>
-                            <th>Movimiento</th>
-                            <th>Folio</th>
-                            <th>Cliente</th>
-                            <th>Método</th>
-                            <th>Referencia</th>
-                            <th>Notas</th>
-                            <th>Monto</th>
-                        </tr>
-                    </thead>
-                    <tbody id="tabla-ingresos-body"></tbody>
-                </table>
-            </div>
+            <p>Control de ingresos, cobros y movimientos de caja en construcción...</p>
         </div>
 
         <div id="vista-fin-cxp" class="module-container oculto">
@@ -852,6 +628,13 @@
                     </tbody>
                 </table>
             </div>
+        </div>
+
+        <div id="vista-fin-comprobantes" class="module-container oculto">
+            <div class="modulo-header">
+                <h2>Facturas y Comprobantes</h2>
+            </div>
+            <p>Control documental en construcción. La facturación fiscal requerirá una integración autorizada.</p>
         </div>
 
         <div id="vista-clientes" class="module-container oculto">
@@ -974,6 +757,71 @@
                     <tbody id="tabla-clientes-body"></tbody>
                 </table>
             </div>
+
+            <section class="client-purchase-history">
+                <div class="modulo-header client-history-header">
+                    <div>
+                        <p class="eyebrow">Relación comercial</p>
+                        <h3>Compras realizadas por clientes</h3>
+                    </div>
+                    <button type="button" class="btn-secondary" onclick="obtenerComprasClientesAPI()">Actualizar compras</button>
+                </div>
+
+                <div class="finance-summary-grid client-purchase-summary" aria-label="Resumen de compras de clientes">
+                    <article class="finance-summary-card">
+                        <span>Total vendido</span>
+                        <strong id="compras-clientes-total">$0.00</strong>
+                    </article>
+                    <article class="finance-summary-card">
+                        <span>Tickets</span>
+                        <strong id="compras-clientes-tickets">0</strong>
+                    </article>
+                    <article class="finance-summary-card success">
+                        <span>Artículos</span>
+                        <strong id="compras-clientes-articulos">0</strong>
+                    </article>
+                </div>
+
+                <div class="client-filters" aria-label="Filtros de compras de clientes">
+                    <div class="input-group">
+                        <label for="compras-clientes-filtro-cliente">Cliente</label>
+                        <select id="compras-clientes-filtro-cliente" onchange="filtrarComprasClientes()">
+                            <option value="todos">Todos los clientes</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label for="compras-clientes-fecha-inicio">Desde</label>
+                        <input type="date" id="compras-clientes-fecha-inicio" onchange="filtrarComprasClientes()">
+                    </div>
+                    <div class="input-group">
+                        <label for="compras-clientes-fecha-fin">Hasta</label>
+                        <input type="date" id="compras-clientes-fecha-fin" onchange="filtrarComprasClientes()">
+                    </div>
+                    <div class="input-group client-search">
+                        <label for="compras-clientes-busqueda">Buscar producto o ticket</label>
+                        <input type="search" id="compras-clientes-busqueda" placeholder="Crema, toalla o #123" oninput="filtrarComprasClientes()">
+                    </div>
+                    <button type="button" class="btn-secondary client-refresh" onclick="restablecerFiltrosComprasClientes()">Limpiar</button>
+                </div>
+
+                <p id="compras-clientes-resumen" class="table-summary" aria-live="polite"></p>
+
+                <div class="tabla-container">
+                    <table class="tabla-custom">
+                        <thead>
+                            <tr>
+                                <th>Fecha</th>
+                                <th>Cliente</th>
+                                <th>Ticket</th>
+                                <th>Productos</th>
+                                <th>Condición</th>
+                                <th>Total</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tabla-compras-clientes-body"></tbody>
+                    </table>
+                </div>
+            </section>
         </div>
 
         <div id="vista-fin-cxc" class="module-container oculto">
@@ -1208,6 +1056,6 @@
 
     </main>
 
-<script src="/static/dashboard.js?v=gastos-20260810"></script>
+    <script src="/static/dashboard.js?v=venta-rapida-clientes-gastos-20260810"></script>
 </body>
 </html>
