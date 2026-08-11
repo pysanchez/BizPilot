@@ -314,10 +314,12 @@ async function cargarProductosPOS() {
 async function cargarClientesPOS() {
     const sesion = obtenerSesion();
     const selector = document.getElementById('pos-cliente');
+    const selectorRapido = document.getElementById('venta-rapida-cliente');
 
     if (!selector || !sesion) return;
 
     selector.disabled = true;
+    if (selectorRapido) selectorRapido.disabled = true;
     selector.innerHTML = '<option value="">Cargando clientes...</option>';
 
     try {
@@ -329,23 +331,104 @@ async function cargarClientesPOS() {
         }
 
         const clientesActivos = (resultado.data || []).filter(cliente => cliente.activo);
-        selector.innerHTML = [
+        const opciones = [
             '<option value="">Público general</option>',
-            ...clientesActivos.map(cliente => (
-                `<option
+            ...clientesActivos.map(cliente => {
+                const telefono = cliente.telefono
+                    ? escaparHTML(cliente.telefono)
+                    : 'Sin teléfono';
+                return `<option
                     value="${cliente.id_cliente}"
                     data-nombre="${escaparHTML(cliente.nombre)}"
                     data-limite-credito="${Number(cliente.limite_credito || 0)}"
                     data-dias-credito="${Number(cliente.dias_credito || 0)}"
-                >${escaparHTML(cliente.nombre)} · ${escaparHTML(cliente.telefono)}</option>`
-            ))
+                >${escaparHTML(cliente.nombre)} · ${telefono}</option>`;
+            })
         ].join('');
+        selector.innerHTML = opciones;
+        if (selectorRapido) selectorRapido.innerHTML = opciones;
     } catch (error) {
         console.error('Error al cargar clientes en el punto de venta:', error);
         selector.innerHTML = '<option value="">Público general</option>';
+        if (selectorRapido) selectorRapido.innerHTML = '<option value="">Público general</option>';
     } finally {
         selector.disabled = false;
+        if (selectorRapido) selectorRapido.disabled = false;
         actualizarCondicionesVenta();
+    }
+}
+
+function sincronizarClienteVentaRapida(origen) {
+    const selectorPOS = document.getElementById('pos-cliente');
+    const selectorRapido = document.getElementById('venta-rapida-cliente');
+    if (!selectorPOS || !selectorRapido) return;
+
+    if (origen === 'rapida') {
+        selectorPOS.value = selectorRapido.value;
+        actualizarCondicionesVenta();
+    } else {
+        selectorRapido.value = selectorPOS.value;
+    }
+}
+
+function mostrarAltaClienteRapido() {
+    const panel = document.getElementById('venta-rapida-alta-cliente');
+    panel.classList.remove('oculto');
+    document.getElementById('venta-rapida-cliente-nombre').focus();
+}
+
+function ocultarAltaClienteRapido() {
+    document.getElementById('venta-rapida-alta-cliente').classList.add('oculto');
+    document.getElementById('venta-rapida-cliente-nombre').value = '';
+}
+
+async function guardarClienteRapido() {
+    const sesion = obtenerSesion();
+    const inputNombre = document.getElementById('venta-rapida-cliente-nombre');
+    const boton = document.getElementById('btn-guardar-cliente-rapido');
+    const nombre = inputNombre.value.trim();
+
+    if (!sesion || !sesion.id_empresa) {
+        alert('La sesión no es válida. Inicia sesión nuevamente.');
+        return;
+    }
+    if (nombre.length < 2) {
+        alert('Escribe un nombre de al menos 2 caracteres.');
+        inputNombre.focus();
+        return;
+    }
+
+    boton.disabled = true;
+    boton.textContent = 'Guardando...';
+
+    try {
+        const respuesta = await fetch('/api/clientes/alta-rapida', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                id_empresa: sesion.id_empresa,
+                nombre
+            })
+        });
+        const resultado = await respuesta.json();
+
+        if (!respuesta.ok || !resultado.exito || !resultado.data?.id_cliente) {
+            throw new Error(
+                mensajeErrorAPI(resultado, 'No se pudo agregar el cliente al directorio.')
+            );
+        }
+
+        const idCliente = String(resultado.data.id_cliente);
+        await cargarClientesPOS();
+        document.getElementById('pos-cliente').value = idCliente;
+        document.getElementById('venta-rapida-cliente').value = idCliente;
+        actualizarCondicionesVenta();
+        ocultarAltaClienteRapido();
+    } catch (error) {
+        alert(error.message || 'Error de conexión al guardar el cliente.');
+    } finally {
+        boton.disabled = false;
+        boton.textContent = 'Guardar cliente';
     }
 }
 
@@ -384,6 +467,7 @@ async function cargarProveedoresPOS() {
 
 function mostrarVentaRapida() {
     const formulario = document.getElementById('form-venta-rapida');
+    sincronizarClienteVentaRapida('pos');
     formulario.classList.remove('oculto');
     document.getElementById('venta-rapida-nombre').focus();
     formulario.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -392,13 +476,18 @@ function mostrarVentaRapida() {
 function ocultarVentaRapida() {
     document.getElementById('form-venta-rapida').classList.add('oculto');
     document.getElementById('formVentaRapida').reset();
+    ocultarAltaClienteRapido();
     document.getElementById('venta-rapida-cantidad').value = '1';
     document.getElementById('venta-rapida-costo').value = '0';
+    document.getElementById('venta-rapida-guardar-producto').checked = true;
+    document.getElementById('venta-rapida-producto-estado').textContent =
+        'Se guardará con SKU automático y existencia inicial de 0.';
 }
 
-function agregarVentaRapida(event) {
+async function agregarVentaRapida(event) {
     event.preventDefault();
 
+    const sesion = obtenerSesion();
     const nombre = document.getElementById('venta-rapida-nombre').value.trim();
     const cantidad = Number(document.getElementById('venta-rapida-cantidad').value);
     const precioVenta = Number(document.getElementById('venta-rapida-precio').value);
@@ -406,7 +495,14 @@ function agregarVentaRapida(event) {
     const proveedorValor = document.getElementById('venta-rapida-proveedor').value;
     const idProveedor = proveedorValor ? Number(proveedorValor) : null;
     const lugarCompra = document.getElementById('venta-rapida-lugar').value.trim() || null;
+    const guardarEnInventario = document.getElementById('venta-rapida-guardar-producto').checked;
+    const botonAgregar = document.getElementById('btn-agregar-venta-rapida');
+    const estadoProducto = document.getElementById('venta-rapida-producto-estado');
 
+    if (!sesion || !sesion.id_empresa) {
+        alert('La sesión no es válida. Inicia sesión nuevamente.');
+        return;
+    }
     if (!nombre) {
         alert('Escribe el nombre del producto.');
         return;
@@ -424,28 +520,81 @@ function agregarVentaRapida(event) {
         return;
     }
 
-    consecutivoVentaRapida += 1;
-    const proveedor = proveedoresPOS.find(
-        item => Number(item.id_proveedor) === idProveedor
-    );
+    botonAgregar.disabled = true;
+    botonAgregar.textContent = guardarEnInventario
+        ? 'Guardando producto...'
+        : 'Agregando...';
 
-    carritoVenta.push({
-        clave_item: `rapida-${consecutivoVentaRapida}`,
-        tipo_item: 'Rapida',
-        id_producto: null,
-        nombre,
-        cantidad,
-        precio_venta: precioVenta,
-        costo_unitario: costoUnitario,
-        id_proveedor: idProveedor,
-        proveedor_nombre: proveedor?.nombre || null,
-        lugar_compra: lugarCompra,
-        subtotal: cantidad * precioVenta,
-        stock_maximo: null
-    });
+    try {
+        let productoCatalogado = false;
+        let productoCreado = false;
 
-    ocultarVentaRapida();
-    actualizarVistaCarrito();
+        if (guardarEnInventario) {
+            const respuesta = await fetch('/api/productos/alta-rapida', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    id_empresa: sesion.id_empresa,
+                    nombre,
+                    precio_venta: precioVenta,
+                    precio_compra: costoUnitario,
+                    id_proveedor: idProveedor
+                })
+            });
+            const resultado = await respuesta.json();
+
+            if (!respuesta.ok || !resultado.exito || !resultado.data?.id_producto) {
+                throw new Error(
+                    mensajeErrorAPI(resultado, 'No se pudo agregar el producto al inventario.')
+                );
+            }
+
+            const stockExistente = Number(resultado.data.stock || 0);
+            if (!resultado.creado && stockExistente > 0) {
+                throw new Error(
+                    `El producto ya existe con ${stockExistente} unidad(es). Agrégalo desde el catálogo para descontar su inventario.`
+                );
+            }
+
+            productoCatalogado = true;
+            productoCreado = Boolean(resultado.creado);
+            estadoProducto.textContent = productoCreado
+                ? 'Producto agregado al inventario con existencia 0.'
+                : 'El producto ya estaba en inventario con existencia 0.';
+        }
+
+        sincronizarClienteVentaRapida('rapida');
+
+        consecutivoVentaRapida += 1;
+        const proveedor = proveedoresPOS.find(
+            item => Number(item.id_proveedor) === idProveedor
+        );
+
+        carritoVenta.push({
+            clave_item: `rapida-${consecutivoVentaRapida}`,
+            tipo_item: 'Rapida',
+            id_producto: null,
+            nombre,
+            cantidad,
+            precio_venta: precioVenta,
+            costo_unitario: costoUnitario,
+            id_proveedor: idProveedor,
+            proveedor_nombre: proveedor?.nombre || null,
+            lugar_compra: lugarCompra,
+            subtotal: cantidad * precioVenta,
+            stock_maximo: null,
+            catalogado_en_inventario: productoCatalogado,
+            producto_recien_creado: productoCreado
+        });
+
+        ocultarVentaRapida();
+        actualizarVistaCarrito();
+    } catch (error) {
+        alert(error.message || 'No se pudo agregar la venta rápida.');
+    } finally {
+        botonAgregar.disabled = false;
+        botonAgregar.textContent = 'Agregar al ticket';
+    }
 }
 
 function renderizarCatalogoPOS(productos) {
@@ -646,6 +795,9 @@ function actualizarVistaCarrito() {
                         </span>
                     </div>
                     ${esRapida ? `<p>Origen: ${escaparHTML(origen)}</p>` : ''}
+                    ${esRapida && item.catalogado_en_inventario
+                        ? `<p>Inventario: ${item.producto_recien_creado ? 'producto nuevo con existencia 0' : 'producto ya registrado con existencia 0'}</p>`
+                        : ''}
                     <div class="carrito-cantidad-control">
                         <button type="button" class="btn-cant" onclick="ajustarCantidad('${item.clave_item}', -1)">-</button>
                         <input type="number" min="1" step="1" class="input-cant-manual" value="${item.cantidad}" onchange="cambiarCantidadManual('${item.clave_item}', this.value)">
@@ -974,7 +1126,7 @@ function renderizarClientes(clientes) {
                 <td><strong>${escaparHTML(cliente.nombre)}</strong></td>
                 <td>
                     <div class="client-contact">
-                        <span>${escaparHTML(cliente.telefono)}</span>
+                        <span>${cliente.telefono ? escaparHTML(cliente.telefono) : 'Sin teléfono'}</span>
                         <small>${cliente.email ? escaparHTML(cliente.email) : 'Sin correo'}</small>
                     </div>
                 </td>
@@ -1033,7 +1185,12 @@ function productosDeCompraCliente(venta) {
             || detalle.productos?.nombre
             || 'Producto histórico',
         cantidad: Number(detalle.cantidad || 0),
-        tipo: detalle.tipo_item || 'Inventario'
+        tipo: detalle.tipo_item || 'Inventario',
+        precio_unitario: Number(detalle.precio_unitario || 0),
+        subtotal: Number(
+            detalle.subtotal
+            || Number(detalle.cantidad || 0) * Number(detalle.precio_unitario || 0)
+        )
     }));
 }
 
@@ -1066,7 +1223,7 @@ async function obtenerComprasClientesAPI() {
         tabla.innerHTML = `
             <tr>
                 <td colspan="6" style="text-align:center; color:#991b1b;">
-                    No se pudo cargar el historial. Verifica que ejecutaste la migración de venta rápida.
+                    No se pudo cargar el historial. Ejecuta migracion_operaciones_finanzas_20260810.sql.
                 </td>
             </tr>
         `;
@@ -1106,21 +1263,26 @@ function filtrarComprasClientes() {
 }
 
 function actualizarResumenComprasClientes(ventas) {
+    const hoy = claveFechaLocalCXC(new Date());
     const resumen = ventas.reduce(
         (acumulado, venta) => {
             acumulado.total += Number(venta.total || 0);
+            if (claveFechaLocalCXC(venta.fecha) === hoy) {
+                acumulado.totalHoy += Number(venta.total || 0);
+            }
             acumulado.articulos += productosDeCompraCliente(venta).reduce(
                 (suma, producto) => suma + producto.cantidad,
                 0
             );
             return acumulado;
         },
-        { total: 0, articulos: 0 }
+        { total: 0, totalHoy: 0, articulos: 0 }
     );
 
     document.getElementById('compras-clientes-total').textContent = formatearMoneda(resumen.total);
     document.getElementById('compras-clientes-tickets').textContent = ventas.length;
     document.getElementById('compras-clientes-articulos').textContent = resumen.articulos;
+    document.getElementById('compras-clientes-hoy').textContent = formatearMoneda(resumen.totalHoy);
 }
 
 function renderizarComprasClientes(ventas) {
@@ -1145,7 +1307,8 @@ function renderizarComprasClientes(ventas) {
         const listaProductos = productos.length
             ? productos.map(producto => `
                 <span class="client-product-line">
-                    ${escaparHTML(producto.nombre)} × ${producto.cantidad}
+                    <strong>${escaparHTML(producto.nombre)}</strong>
+                    <span>${producto.cantidad} × ${formatearMoneda(producto.precio_unitario)} = <strong>${formatearMoneda(producto.subtotal)}</strong></span>
                     ${producto.tipo === 'Rapida' ? '<small>Venta rápida</small>' : ''}
                 </span>
             `).join('')
@@ -1742,6 +1905,8 @@ async function procesarAbonoCXP() {
 // CUENTAS POR COBRAR (CXC)
 // ==========================================
 let cuentasCXCGlobal = [];
+let clientesCXCGlobal = [];
+let clienteCXCSeleccionadoId = null;
 let cuentaCXCSeleccionadaId = null;
 
 function saldoCuentaCXC(cuenta) {
@@ -1771,6 +1936,102 @@ function formatearFechaCXC(valor, incluirHora = false) {
         : fecha.toLocaleDateString('es-MX');
 }
 
+function claveFechaLocalCXC(valor) {
+    if (!valor) return '';
+    const fecha = new Date(valor);
+    if (Number.isNaN(fecha.getTime())) return String(valor).slice(0, 10);
+    const anio = fecha.getFullYear();
+    const mes = String(fecha.getMonth() + 1).padStart(2, '0');
+    const dia = String(fecha.getDate()).padStart(2, '0');
+    return `${anio}-${mes}-${dia}`;
+}
+
+function nombreClienteCXC(cuenta) {
+    return cuenta.cliente || cuenta.clientes?.nombre || `Cliente ${cuenta.id_cliente}`;
+}
+
+function productosCuentaCXC(cuenta) {
+    return (cuenta.ventas_detalle || []).map(detalle => ({
+        nombre: detalle.nombre_producto || detalle.productos?.nombre || 'Producto histórico',
+        cantidad: Number(detalle.cantidad || 0),
+        precio_unitario: Number(detalle.precio_unitario || 0),
+        subtotal: Number(
+            detalle.subtotal
+            || Number(detalle.cantidad || 0) * Number(detalle.precio_unitario || 0)
+        )
+    }));
+}
+
+function pagosConSaldosCXC(cuenta) {
+    const pagos = [...(cuenta.pagos_cxc || [])]
+        .sort((a, b) => {
+            const diferencia = new Date(a.fecha_pago) - new Date(b.fecha_pago);
+            return diferencia || Number(a.id_pago_cxc || 0) - Number(b.id_pago_cxc || 0);
+        });
+    let saldoCalculado = Number(cuenta.total || 0);
+
+    return pagos.map(pago => {
+        const saldoAntes = pago.saldo_antes === null || pago.saldo_antes === undefined
+            ? saldoCalculado
+            : Number(pago.saldo_antes);
+        const saldoDespues = pago.saldo_despues === null || pago.saldo_despues === undefined
+            ? Math.max(saldoAntes - Number(pago.monto || 0), 0)
+            : Number(pago.saldo_despues);
+        saldoCalculado = saldoDespues;
+        return { ...pago, saldo_antes_calculado: saldoAntes, saldo_despues_calculado: saldoDespues };
+    });
+}
+
+function consolidarClientesCXC(cuentas) {
+    const hoy = claveFechaLocalCXC(new Date());
+    const mapa = new Map();
+
+    cuentas.forEach(cuenta => {
+        const idCliente = Number(cuenta.id_cliente);
+        if (!Number.isInteger(idCliente) || idCliente <= 0) return;
+
+        if (!mapa.has(idCliente)) {
+            mapa.set(idCliente, {
+                id_cliente: idCliente,
+                nombre: nombreClienteCXC(cuenta),
+                telefono: cuenta.clientes?.telefono || '',
+                cuentas: [],
+                total: 0,
+                cobrado: 0,
+                saldo: 0,
+                vencido: 0,
+                por_vencer: 0,
+                cobrado_hoy: 0,
+                estado: 'Pagado'
+            });
+        }
+
+        const cliente = mapa.get(idCliente);
+        const saldo = saldoCuentaCXC(cuenta);
+        const estado = estadoCuentaCXC(cuenta);
+        cliente.cuentas.push(cuenta);
+        cliente.total += Number(cuenta.total || 0);
+        cliente.cobrado += Number(cuenta.monto_pagado || 0);
+        cliente.saldo += saldo;
+        if (estado === 'Vencido') cliente.vencido += saldo;
+        if (estado === 'Pendiente') cliente.por_vencer += saldo;
+        cliente.cobrado_hoy += (cuenta.pagos_cxc || []).reduce(
+            (total, pago) => total + (
+                claveFechaLocalCXC(pago.fecha_pago) === hoy ? Number(pago.monto || 0) : 0
+            ),
+            0
+        );
+    });
+
+    return Array.from(mapa.values()).map(cliente => {
+        cliente.estado = cliente.saldo <= 0.009
+            ? 'Pagado'
+            : cliente.vencido > 0.009 ? 'Vencido' : 'Pendiente';
+        cliente.cuentas.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+        return cliente;
+    }).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+}
+
 async function obtenerCXCAPI() {
     const sesion = obtenerSesion();
     const tabla = document.getElementById('tabla-cxc-body');
@@ -1788,15 +2049,16 @@ async function obtenerCXCAPI() {
         }
 
         cuentasCXCGlobal = resultado.data || [];
+        clientesCXCGlobal = consolidarClientesCXC(cuentasCXCGlobal);
         actualizarFiltroClientesCXC();
-        actualizarResumenCXC();
         filtrarCXC();
     } catch (error) {
         console.error('Error al cargar CxC:', error);
         cuentasCXCGlobal = [];
-        actualizarResumenCXC();
+        clientesCXCGlobal = [];
+        actualizarResumenCXC([]);
         document.getElementById('cxc-resumen-registros').textContent = '';
-        tabla.innerHTML = '<tr><td colspan="9" style="text-align:center; color:#991b1b;">No se pudo cargar la cartera. Verifica la migración de CxC y la conexión.</td></tr>';
+        tabla.innerHTML = '<tr><td colspan="9" style="text-align:center; color:#991b1b;">No se pudo cargar la cartera. Ejecuta migracion_operaciones_finanzas_20260810.sql y revisa la conexión.</td></tr>';
     }
 }
 
@@ -1805,10 +2067,8 @@ function actualizarFiltroClientesCXC() {
     const seleccionAnterior = selector.value;
     const clientes = new Map();
 
-    cuentasCXCGlobal.forEach(cuenta => {
-        if (cuenta.id_cliente) {
-            clientes.set(String(cuenta.id_cliente), cuenta.cliente || cuenta.clientes?.nombre || `Cliente ${cuenta.id_cliente}`);
-        }
+    clientesCXCGlobal.forEach(cliente => {
+        clientes.set(String(cliente.id_cliente), cliente.nombre);
     });
 
     selector.innerHTML = [
@@ -1823,118 +2083,314 @@ function actualizarFiltroClientesCXC() {
         : 'todos';
 }
 
-function actualizarResumenCXC() {
-    const resumen = cuentasCXCGlobal.reduce((acumulado, cuenta) => {
-        const saldo = saldoCuentaCXC(cuenta);
-        const estado = estadoCuentaCXC(cuenta);
-        acumulado.pendiente += saldo;
-        acumulado.cobrado += Number(cuenta.monto_pagado || 0);
-        if (estado === 'Vencido') acumulado.vencido += saldo;
-        if (estado === 'Pendiente') acumulado.porVencer += saldo;
+function actualizarResumenCXC(clientes) {
+    const resumen = clientes.reduce((acumulado, cliente) => {
+        acumulado.pendiente += cliente.saldo;
+        acumulado.vencido += cliente.vencido;
+        acumulado.porVencer += cliente.por_vencer;
+        acumulado.cobrado += cliente.cobrado;
+        acumulado.cobradoHoy += cliente.cobrado_hoy;
+        if (cliente.saldo > 0.009) acumulado.clientesConSaldo += 1;
         return acumulado;
-    }, { pendiente: 0, vencido: 0, porVencer: 0, cobrado: 0 });
+    }, { pendiente: 0, vencido: 0, porVencer: 0, cobrado: 0, cobradoHoy: 0, clientesConSaldo: 0 });
 
     document.getElementById('cxc-resumen-pendiente').textContent = formatearMoneda(resumen.pendiente);
     document.getElementById('cxc-resumen-vencido').textContent = formatearMoneda(resumen.vencido);
     document.getElementById('cxc-resumen-por-vencer').textContent = formatearMoneda(resumen.porVencer);
+    document.getElementById('cxc-resumen-cobrado-hoy').textContent = formatearMoneda(resumen.cobradoHoy);
     document.getElementById('cxc-resumen-cobrado').textContent = formatearMoneda(resumen.cobrado);
+    document.getElementById('cxc-resumen-clientes').textContent = resumen.clientesConSaldo;
 }
 
 function filtrarCXC() {
-    const texto = document.getElementById('cxc-busqueda').value.trim().toLowerCase();
+    const texto = normalizarBusqueda(document.getElementById('cxc-busqueda').value);
     const estadoFiltro = document.getElementById('cxc-filtro-estado').value;
     const clienteFiltro = document.getElementById('cxc-filtro-cliente').value;
+    const fechaInicio = document.getElementById('cxc-fecha-inicio').value;
+    const fechaFin = document.getElementById('cxc-fecha-fin').value;
 
-    const filtradas = cuentasCXCGlobal.filter(cuenta => {
-        const nombre = String(cuenta.cliente || cuenta.clientes?.nombre || '').toLowerCase();
-        const coincideTexto = !texto
-            || nombre.includes(texto)
-            || String(cuenta.id_venta).includes(texto);
-        const estado = estadoCuentaCXC(cuenta).toLowerCase();
-        const coincideEstado = estadoFiltro === 'todos' || estado === estadoFiltro;
+    const cuentasFiltradas = cuentasCXCGlobal.filter(cuenta => {
+        const fechaVenta = claveFechaLocalCXC(cuenta.fecha);
+        const contenido = [
+            cuenta.id_venta,
+            nombreClienteCXC(cuenta),
+            ...productosCuentaCXC(cuenta).map(producto => producto.nombre),
+            ...(cuenta.pagos_cxc || []).flatMap(pago => [
+                pago.descripcion,
+                pago.referencia,
+                pago.notas
+            ])
+        ].map(normalizarBusqueda).join(' ');
         const coincideCliente = clienteFiltro === 'todos' || String(cuenta.id_cliente) === clienteFiltro;
-        return coincideTexto && coincideEstado && coincideCliente;
+        return (
+            (!texto || contenido.includes(texto))
+            && coincideCliente
+            && (!fechaInicio || fechaVenta >= fechaInicio)
+            && (!fechaFin || fechaVenta <= fechaFin)
+        );
     });
 
-    renderizarCXC(filtradas);
+    const clientesFiltrados = consolidarClientesCXC(cuentasFiltradas).filter(cliente => (
+        estadoFiltro === 'todos' || cliente.estado.toLowerCase() === estadoFiltro
+    ));
+
+    actualizarResumenCXC(clientesFiltrados);
+    renderizarCXC(clientesFiltrados);
 }
 
-function renderizarCXC(cuentas) {
+function renderizarCXC(clientes) {
     const tabla = document.getElementById('tabla-cxc-body');
-    document.getElementById('cxc-resumen-registros').textContent = `${cuentas.length} de ${cuentasCXCGlobal.length} cuenta(s)`;
+    document.getElementById('cxc-resumen-registros').textContent = `${clientes.length} de ${clientesCXCGlobal.length} cliente(s)`;
 
-    if (cuentas.length === 0) {
+    if (clientes.length === 0) {
         tabla.innerHTML = '<tr><td colspan="9" style="text-align:center;">No hay cuentas que coincidan con los filtros.</td></tr>';
         return;
     }
 
-    tabla.innerHTML = cuentas.map(cuenta => {
-        const estado = estadoCuentaCXC(cuenta);
-        const clase = estado === 'Pagado'
+    tabla.innerHTML = clientes.map(cliente => {
+        const clase = cliente.estado === 'Pagado'
             ? 'badge-success'
-            : estado === 'Vencido' ? 'badge-danger' : 'badge-warning';
-        const cliente = cuenta.cliente || cuenta.clientes?.nombre || 'Cliente sin nombre';
-        const saldo = saldoCuentaCXC(cuenta);
+            : cliente.estado === 'Vencido' ? 'badge-danger' : 'badge-warning';
 
         return `
             <tr>
-                <td><strong>#${cuenta.id_venta}</strong></td>
-                <td>${escaparHTML(cliente)}</td>
-                <td>${formatearFechaCXC(cuenta.fecha)}</td>
-                <td>${formatearFechaCXC(cuenta.fecha_vencimiento)}</td>
-                <td>${formatearMoneda(cuenta.total)}</td>
-                <td class="amount-positive">${formatearMoneda(cuenta.monto_pagado)}</td>
-                <td><strong>${formatearMoneda(saldo)}</strong></td>
-                <td><span class="${clase}">${estado}</span></td>
-                <td><button type="button" class="btn-table btn-table-edit" onclick="abrirModalCXC(${cuenta.id_venta})">Ver / Cobrar</button></td>
+                <td>
+                    <strong>${escaparHTML(cliente.nombre)}</strong>
+                    <small class="cxc-client-phone">${escaparHTML(cliente.telefono || 'Sin teléfono')}</small>
+                </td>
+                <td>${cliente.cuentas.length}</td>
+                <td>${formatearMoneda(cliente.total)}</td>
+                <td class="amount-positive">${formatearMoneda(cliente.cobrado)}</td>
+                <td><strong>${formatearMoneda(cliente.saldo)}</strong></td>
+                <td class="${cliente.vencido > 0 ? 'amount-negative' : ''}">${formatearMoneda(cliente.vencido)}</td>
+                <td class="amount-positive">${formatearMoneda(cliente.cobrado_hoy)}</td>
+                <td><span class="${clase}">${cliente.estado}</span></td>
+                <td><button type="button" class="btn-table btn-table-edit" onclick="abrirClienteCXC(${cliente.id_cliente})">Desglosar movimientos</button></td>
             </tr>
         `;
     }).join('');
 }
 
-function abrirModalCXC(idVenta) {
-    const cuenta = cuentasCXCGlobal.find(item => Number(item.id_venta) === Number(idVenta));
-    if (!cuenta) return;
+function abrirClienteCXC(idCliente) {
+    const cliente = clientesCXCGlobal.find(item => Number(item.id_cliente) === Number(idCliente));
+    if (!cliente) return;
 
-    cuentaCXCSeleccionadaId = Number(idVenta);
-    const saldo = saldoCuentaCXC(cuenta);
-    const estado = estadoCuentaCXC(cuenta);
-    const cliente = cuenta.cliente || cuenta.clientes?.nombre || 'Cliente sin nombre';
-
-    document.getElementById('cxc-detalle-id').textContent = cuenta.id_venta;
-    document.getElementById('cxc-detalle-cliente').textContent = cliente;
+    clienteCXCSeleccionadoId = Number(idCliente);
+    cuentaCXCSeleccionadaId = null;
+    document.getElementById('cxc-detalle-cliente').textContent = cliente.nombre;
     document.getElementById('cxc-detalle-resumen').innerHTML = `
-        <div><span>Total</span><strong>${formatearMoneda(cuenta.total)}</strong></div>
-        <div><span>Cobrado</span><strong>${formatearMoneda(cuenta.monto_pagado)}</strong></div>
-        <div><span>Saldo</span><strong>${formatearMoneda(saldo)}</strong></div>
-        <div><span>Vencimiento</span><strong>${formatearFechaCXC(cuenta.fecha_vencimiento)} · ${estado}</strong></div>
+        <div><span>Créditos</span><strong>${cliente.cuentas.length}</strong></div>
+        <div><span>Total vendido</span><strong>${formatearMoneda(cliente.total)}</strong></div>
+        <div><span>Cobrado</span><strong>${formatearMoneda(cliente.cobrado)}</strong></div>
+        <div><span>Saldo actual</span><strong>${formatearMoneda(cliente.saldo)}</strong></div>
+        <div><span>Saldo vencido</span><strong>${formatearMoneda(cliente.vencido)}</strong></div>
+        <div><span>Cobrado hoy</span><strong>${formatearMoneda(cliente.cobrado_hoy)}</strong></div>
     `;
 
-    const pagos = [...(cuenta.pagos_cxc || [])]
-        .sort((a, b) => new Date(b.fecha_pago) - new Date(a.fecha_pago));
-    document.getElementById('cxc-historial-body').innerHTML = pagos.length
-        ? pagos.map(pago => `
+    document.getElementById('cxc-cuentas-cliente-body').innerHTML = cliente.cuentas.map(cuenta => {
+        const saldo = saldoCuentaCXC(cuenta);
+        const estado = estadoCuentaCXC(cuenta);
+        const clase = estado === 'Pagado'
+            ? 'badge-success'
+            : estado === 'Vencido' ? 'badge-danger' : 'badge-warning';
+        const accion = estado === 'Pagado'
+            ? '<span class="badge-success">Liquidada</span>'
+            : `<button type="button" class="btn-table btn-table-edit" onclick="seleccionarCuentaParaCobro(${Number(cuenta.id_venta)})">Cobrar</button>`;
+        return `
             <tr>
-                <td>${formatearFechaCXC(pago.fecha_pago, true)}</td>
-                <td>${escaparHTML(pago.metodo_pago)}</td>
-                <td>${escaparHTML(pago.referencia || '—')}</td>
-                <td><strong>${formatearMoneda(pago.monto)}</strong></td>
+                <td><strong>#${Number(cuenta.id_venta)}</strong></td>
+                <td>${formatearFechaCXC(cuenta.fecha, true)}</td>
+                <td>${formatearFechaCXC(cuenta.fecha_vencimiento)}</td>
+                <td>${formatearMoneda(cuenta.total)}</td>
+                <td class="amount-positive">${formatearMoneda(cuenta.monto_pagado)}</td>
+                <td><strong>${formatearMoneda(saldo)}</strong></td>
+                <td><span class="${clase}">${estado}</span></td>
+                <td>${accion}</td>
             </tr>
-        `).join('')
-        : '<tr><td colspan="4">No hay cobros registrados.</td></tr>';
+        `;
+    }).join('');
 
-    const cajaAbono = document.getElementById('caja-nuevo-abono-cxc');
-    cajaAbono.classList.toggle('oculto', estado === 'Pagado');
-    document.getElementById('cxc-abono-monto').value = '';
-    document.getElementById('cxc-abono-monto').max = saldo.toFixed(2);
-    document.getElementById('cxc-abono-referencia').value = '';
-    document.getElementById('cxc-abono-notas').value = '';
+    renderizarMovimientosClienteCXC(cliente);
+    cancelarCobroCXC();
     document.getElementById('modal-pagos-cxc').classList.remove('oculto');
     document.getElementById('modal-pagos-cxc').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
+function renderizarMovimientosClienteCXC(cliente) {
+    const movimientos = [];
+
+    cliente.cuentas.forEach(cuenta => {
+        movimientos.push({
+            tipo: 'Venta',
+            id_movimiento: Number(cuenta.id_venta),
+            id_venta: Number(cuenta.id_venta),
+            fecha: cuenta.fecha,
+            importe: Number(cuenta.total || 0),
+            metodo_pago: cuenta.metodo_pago || 'Crédito',
+            productos: productosCuentaCXC(cuenta)
+        });
+
+        pagosConSaldosCXC(cuenta).forEach(pago => movimientos.push({
+            tipo: 'Pago',
+            id_movimiento: Number(pago.id_pago_cxc),
+            id_venta: Number(cuenta.id_venta),
+            fecha: pago.fecha_pago,
+            importe: Number(pago.monto || 0),
+            metodo_pago: pago.metodo_pago || 'No especificado',
+            descripcion: pago.descripcion || pago.notas || `Abono a venta #${cuenta.id_venta}`,
+            referencia: pago.referencia,
+            notas: pago.notas,
+            saldo_antes: pago.saldo_antes_calculado,
+            saldo_despues: pago.saldo_despues_calculado
+        }));
+    });
+
+    movimientos.sort((a, b) => {
+        const diferencia = new Date(b.fecha) - new Date(a.fecha);
+        return diferencia || b.id_movimiento - a.id_movimiento;
+    });
+
+    const tabla = document.getElementById('cxc-historial-body');
+    tabla.innerHTML = movimientos.length ? movimientos.map(movimiento => {
+        const esVenta = movimiento.tipo === 'Venta';
+        const clase = esVenta ? 'badge-warning' : 'badge-success';
+        const descripcion = esVenta
+            ? movimiento.productos.length
+                ? `<div class="cxc-product-breakdown">${movimiento.productos.map(producto => `
+                    <span>
+                        <strong>${escaparHTML(producto.nombre)}</strong>:
+                        ${producto.cantidad} × ${formatearMoneda(producto.precio_unitario)}
+                        = <strong>${formatearMoneda(producto.subtotal)}</strong>
+                    </span>
+                `).join('')}</div>`
+                : '<span>Venta sin detalle disponible</span>'
+            : `<div class="cxc-movement-description">
+                <strong>${escaparHTML(movimiento.descripcion)}</strong>
+                <span>${escaparHTML(movimiento.metodo_pago)}${movimiento.referencia ? ` · Ref. ${escaparHTML(movimiento.referencia)}` : ''}</span>
+                ${movimiento.notas && movimiento.notas !== movimiento.descripcion ? `<small>${escaparHTML(movimiento.notas)}</small>` : ''}
+            </div>`;
+
+        return `
+            <tr>
+                <td>${formatearFechaCXC(movimiento.fecha, true)}</td>
+                <td><span class="${clase}">${movimiento.tipo}</span></td>
+                <td>#${movimiento.id_venta}</td>
+                <td>${descripcion}</td>
+                <td class="${esVenta ? 'amount-negative' : 'amount-positive'}"><strong>${esVenta ? '' : '+'}${formatearMoneda(movimiento.importe)}</strong></td>
+                <td>${esVenta ? '—' : formatearMoneda(movimiento.saldo_antes)}</td>
+                <td>${esVenta ? '—' : `<strong>${formatearMoneda(movimiento.saldo_despues)}</strong>`}</td>
+                <td><button type="button" class="btn-table btn-table-state" onclick="editarFechaMovimientoCXC('${movimiento.tipo}', ${movimiento.id_movimiento})">Editar fecha</button></td>
+            </tr>
+        `;
+    }).join('') : '<tr><td colspan="8">No hay movimientos registrados.</td></tr>';
+}
+
+function seleccionarCuentaParaCobro(idVenta) {
+    const cuenta = cuentasCXCGlobal.find(item => Number(item.id_venta) === Number(idVenta));
+    if (!cuenta || Number(cuenta.id_cliente) !== clienteCXCSeleccionadoId) return;
+
+    const saldo = saldoCuentaCXC(cuenta);
+    if (saldo <= 0.009) {
+        alert('La cuenta ya está pagada.');
+        return;
+    }
+
+    cuentaCXCSeleccionadaId = Number(idVenta);
+    document.getElementById('cxc-abono-cuenta').textContent = `#${idVenta}`;
+    document.getElementById('cxc-abono-saldo').textContent = `Saldo antes de pagar: ${formatearMoneda(saldo)}`;
+    document.getElementById('cxc-abono-monto').value = '';
+    document.getElementById('cxc-abono-monto').max = saldo.toFixed(2);
+    document.getElementById('cxc-abono-descripcion').value = `Abono a venta #${idVenta}`;
+    document.getElementById('cxc-abono-referencia').value = '';
+    document.getElementById('cxc-abono-notas').value = '';
+    document.getElementById('caja-nuevo-abono-cxc').classList.remove('oculto');
+    document.getElementById('caja-nuevo-abono-cxc').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function cancelarCobroCXC() {
+    cuentaCXCSeleccionadaId = null;
+    document.getElementById('caja-nuevo-abono-cxc')?.classList.add('oculto');
+}
+
+function movimientoCXC(tipoMovimiento, idMovimiento) {
+    for (const cuenta of cuentasCXCGlobal) {
+        if (tipoMovimiento === 'Venta' && Number(cuenta.id_venta) === Number(idMovimiento)) {
+            return { fecha: cuenta.fecha, id_cliente: Number(cuenta.id_cliente) };
+        }
+        if (tipoMovimiento === 'Pago') {
+            const pago = (cuenta.pagos_cxc || []).find(
+                item => Number(item.id_pago_cxc) === Number(idMovimiento)
+            );
+            if (pago) return { fecha: pago.fecha_pago, id_cliente: Number(cuenta.id_cliente) };
+        }
+    }
+    return null;
+}
+
+function fechaParaEdicionCXC(valor) {
+    const fecha = new Date(valor);
+    if (Number.isNaN(fecha.getTime())) return '';
+    const anio = fecha.getFullYear();
+    const mes = String(fecha.getMonth() + 1).padStart(2, '0');
+    const dia = String(fecha.getDate()).padStart(2, '0');
+    const hora = String(fecha.getHours()).padStart(2, '0');
+    const minuto = String(fecha.getMinutes()).padStart(2, '0');
+    return `${anio}-${mes}-${dia}T${hora}:${minuto}`;
+}
+
+async function editarFechaMovimientoCXC(tipoMovimiento, idMovimiento) {
+    const movimiento = movimientoCXC(tipoMovimiento, idMovimiento);
+    if (!movimiento) return;
+
+    const nuevaFechaTexto = prompt(
+        `Nueva fecha y hora para ${tipoMovimiento.toLowerCase()} (AAAA-MM-DDTHH:MM):`,
+        fechaParaEdicionCXC(movimiento.fecha)
+    );
+    if (nuevaFechaTexto === null) return;
+
+    const nuevaFecha = new Date(nuevaFechaTexto);
+    if (!nuevaFechaTexto || Number.isNaN(nuevaFecha.getTime())) {
+        alert('La fecha no es válida. Usa el formato AAAA-MM-DDTHH:MM.');
+        return;
+    }
+
+    const sesion = obtenerSesion();
+    try {
+        const respuesta = await fetch('/api/cxc/movimientos/fecha', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                id_empresa: sesion.id_empresa,
+                tipo_movimiento: tipoMovimiento,
+                id_movimiento: Number(idMovimiento),
+                fecha: nuevaFecha.toISOString()
+            })
+        });
+        const resultado = await respuesta.json();
+        if (!respuesta.ok || !resultado.exito) {
+            throw new Error(resultado.detail || resultado.mensaje || 'No se pudo actualizar la fecha.');
+        }
+
+        const idCliente = movimiento.id_cliente;
+        await obtenerCXCAPI();
+        abrirClienteCXC(idCliente);
+    } catch (error) {
+        alert(error.message || 'No se pudo actualizar la fecha.');
+    }
+}
+
+function restablecerFiltrosCXC() {
+    document.getElementById('cxc-busqueda').value = '';
+    document.getElementById('cxc-filtro-estado').value = 'todos';
+    document.getElementById('cxc-filtro-cliente').value = 'todos';
+    document.getElementById('cxc-fecha-inicio').value = '';
+    document.getElementById('cxc-fecha-fin').value = '';
+    filtrarCXC();
+}
+
 function cerrarModalCXC() {
     document.getElementById('modal-pagos-cxc')?.classList.add('oculto');
+    clienteCXCSeleccionadoId = null;
     cuentaCXCSeleccionadaId = null;
 }
 
@@ -1955,6 +2411,12 @@ async function procesarAbonoCXC() {
         return;
     }
 
+    const descripcion = document.getElementById('cxc-abono-descripcion').value.trim();
+    if (!descripcion) {
+        alert('Escribe la descripción del movimiento.');
+        return;
+    }
+
     const sesion = obtenerSesion();
     const boton = document.querySelector('#caja-nuevo-abono-cxc .btn-primary');
     boton.disabled = true;
@@ -1969,6 +2431,7 @@ async function procesarAbonoCXC() {
                 id_venta: cuentaCXCSeleccionadaId,
                 monto,
                 metodo_pago: document.getElementById('cxc-abono-metodo').value,
+                descripcion,
                 referencia: document.getElementById('cxc-abono-referencia').value.trim() || null,
                 notas: document.getElementById('cxc-abono-notas').value.trim() || null
             })
@@ -1979,8 +2442,11 @@ async function procesarAbonoCXC() {
             throw new Error(resultado.detail || resultado.mensaje || 'No se pudo registrar el cobro.');
         }
 
-        alert('Cobro registrado correctamente.');
+        const idCliente = Number(cuenta.id_cliente);
+        const saldoDespues = Math.max(saldo - monto, 0);
+        alert(`Cobro registrado. Saldo antes: ${formatearMoneda(saldo)} · Saldo después: ${formatearMoneda(saldoDespues)}.`);
         await obtenerCXCAPI();
+        abrirClienteCXC(idCliente);
     } catch (error) {
         alert(error.message || 'Error de conexión al registrar el cobro.');
     } finally {

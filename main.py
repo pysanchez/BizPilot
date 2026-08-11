@@ -1,5 +1,5 @@
 import re
-from datetime import date
+from datetime import date, datetime
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -38,6 +38,24 @@ class ProductoSchema(BaseModel):
     precio_venta: float
     stock: int
     stock_minimo: int
+
+class ProductoAltaRapidaSchema(BaseModel):
+    id_empresa: int = Field(gt=0)
+    nombre: str = Field(min_length=2, max_length=160)
+    precio_venta: float = Field(gt=0)
+    precio_compra: float = Field(default=0, ge=0)
+    id_proveedor: Optional[int] = Field(default=None, gt=0)
+
+    @field_validator("nombre", mode="before")
+    @classmethod
+    def limpiar_nombre_producto_rapido(cls, valor):
+        if not isinstance(valor, str):
+            raise ValueError("El nombre del producto debe ser texto")
+        return valor.strip()
+
+@app.post("/api/productos/alta-rapida")
+def guardar_producto_rapido(producto: ProductoAltaRapidaSchema):
+    return database.crear_producto_rapido(producto.model_dump())
 
 @app.get("/api/productos/{id_empresa}")
 def listar_productos(id_empresa: int):
@@ -175,9 +193,27 @@ class ClienteBaseSchema(BaseModel):
 class ClienteSchema(ClienteBaseSchema):
     id_empresa: int = Field(gt=0)
 
+class ClienteAltaRapidaSchema(BaseModel):
+    id_empresa: int = Field(gt=0)
+    nombre: str = Field(min_length=2, max_length=120)
+
+    @field_validator("nombre", mode="before")
+    @classmethod
+    def limpiar_nombre_cliente_rapido(cls, valor):
+        if not isinstance(valor, str):
+            raise ValueError("El nombre del cliente debe ser texto")
+        return valor.strip()
+
 class ClienteEstadoSchema(BaseModel):
     id_empresa: int = Field(gt=0)
     activo: bool
+
+@app.post("/api/clientes/alta-rapida")
+def guardar_cliente_rapido(cliente: ClienteAltaRapidaSchema):
+    return database.crear_cliente_rapido(
+        id_empresa=cliente.id_empresa,
+        nombre=cliente.nombre
+    )
 
 @app.get("/api/clientes/{id_empresa}")
 def listar_clientes(id_empresa: int):
@@ -309,10 +345,11 @@ class AbonoCXCSchema(BaseModel):
     id_venta: int = Field(gt=0)
     monto: float = Field(gt=0)
     metodo_pago: Literal["Transferencia", "Efectivo", "Tarjeta", "Deposito"]
+    descripcion: Optional[str] = Field(default=None, max_length=200)
     referencia: Optional[str] = Field(default=None, max_length=80)
     notas: Optional[str] = Field(default=None, max_length=200)
 
-    @field_validator("referencia", "notas", mode="before")
+    @field_validator("descripcion", "referencia", "notas", mode="before")
     @classmethod
     def limpiar_opcional(cls, valor):
         if valor is None or str(valor).strip() == "":
@@ -337,8 +374,24 @@ def abonar_cuenta_por_cobrar(abono: AbonoCXCSchema):
         id_venta=abono.id_venta,
         monto=abono.monto,
         metodo_pago=abono.metodo_pago,
+        descripcion=abono.descripcion,
         referencia=abono.referencia,
         notas=abono.notas
+    )
+
+class FechaMovimientoCXCSchema(BaseModel):
+    id_empresa: int = Field(gt=0)
+    tipo_movimiento: Literal["Venta", "Pago"]
+    id_movimiento: int = Field(gt=0)
+    fecha: datetime
+
+@app.patch("/api/cxc/movimientos/fecha")
+def editar_fecha_movimiento_cxc(datos: FechaMovimientoCXCSchema):
+    return database.actualizar_fecha_movimiento_cxc(
+        id_empresa=datos.id_empresa,
+        tipo_movimiento=datos.tipo_movimiento,
+        id_movimiento=datos.id_movimiento,
+        fecha=datos.fecha
     )
 
 class GastoManualSchema(BaseModel):

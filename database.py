@@ -1,4 +1,5 @@
 import os
+import uuid
 from datetime import date, datetime, timezone
 from supabase import create_client, Client
 from dotenv import load_dotenv
@@ -51,6 +52,68 @@ def crear_producto(datos_producto):
     except Exception as e:
         print(f"Error al crear producto: {e}")
         return {"exito": False, "mensaje": "No se pudo guardar el producto"}
+
+
+def crear_producto_rapido(datos_producto):
+    try:
+        id_empresa = int(datos_producto["id_empresa"])
+        nombre = " ".join(str(datos_producto["nombre"]).split())
+        id_proveedor = datos_producto.get("id_proveedor")
+
+        existente = supabase.table("productos") \
+            .select("*") \
+            .eq("id_empresa", id_empresa) \
+            .ilike("nombre", nombre) \
+            .limit(1) \
+            .execute()
+
+        if existente.data:
+            return {
+                "exito": True,
+                "creado": False,
+                "mensaje": "El producto ya estaba registrado en inventario",
+                "data": existente.data[0]
+            }
+
+        if id_proveedor is not None:
+            proveedor = supabase.table("proveedores") \
+                .select("id_proveedor") \
+                .eq("id_proveedor", id_proveedor) \
+                .eq("id_empresa", id_empresa) \
+                .limit(1) \
+                .execute()
+            if not proveedor.data:
+                return {
+                    "exito": False,
+                    "mensaje": "El proveedor seleccionado no pertenece a esta empresa"
+                }
+
+        nuevo_producto = {
+            "id_empresa": id_empresa,
+            "id_proveedor": id_proveedor,
+            "sku": f"VR-{uuid.uuid4().hex[:10].upper()}",
+            "nombre": nombre,
+            "categoria": "Venta rápida",
+            "precio_compra": float(datos_producto.get("precio_compra") or 0),
+            "precio_venta": float(datos_producto["precio_venta"]),
+            "stock": 0,
+            "stock_minimo": 5
+        }
+        response = supabase.table("productos").insert(nuevo_producto).execute()
+        producto = response.data[0] if response.data else None
+
+        return {
+            "exito": True,
+            "creado": True,
+            "mensaje": "Producto agregado a inventario con existencia cero",
+            "data": producto
+        }
+    except Exception as e:
+        print(f"Error al crear producto rápido: {e}")
+        return {
+            "exito": False,
+            "mensaje": "No se pudo agregar el producto al inventario"
+        }
 
 
 def obtener_productos_empresa(id_empresa):
@@ -109,14 +172,35 @@ def registrar_venta(
             "Producto no encontrado",
             "Stock insuficiente",
             "El tipo de producto no es válido",
+            "La cantidad de un producto no es válida",
             "Escribe el nombre del producto de venta rápida",
             "El precio de una venta rápida debe ser mayor a cero",
-            "El proveedor de la venta rápida no pertenece a esta empresa"
+            "El proveedor de la venta rápida no pertenece a esta empresa",
+            "El total de la venta debe ser mayor a cero"
         ]
         for mensaje in mensajes_controlados:
             if mensaje in texto_error:
                 return {"exito": False, "mensaje": mensaje}
-        return {"exito": False, "mensaje": "No se pudo registrar la venta. Verifica la migración de CxC"}
+        indicadores_migracion = [
+            "PGRST202",
+            "Could not find the function",
+            "does not exist",
+            "schema cache",
+            "column",
+            "relation"
+        ]
+        if any(indicador.lower() in texto_error.lower() for indicador in indicadores_migracion):
+            return {
+                "exito": False,
+                "mensaje": (
+                    "La base de datos no tiene la versión requerida. "
+                    "Ejecuta migracion_operaciones_finanzas_20260810.sql en Supabase."
+                )
+            }
+        return {
+            "exito": False,
+            "mensaje": "No se pudo registrar la venta. Revisa el error técnico en los logs de Render."
+        }
 
 def obtener_historial_ventas(id_empresa):
     try:
@@ -132,7 +216,7 @@ def obtener_compras_clientes(id_empresa):
                 "id_venta,id_cliente,cliente,total,tipo_venta,estado_pago,fecha,"
                 "ventas_detalle("
                 "id_producto,nombre_producto,tipo_item,cantidad,"
-                "precio_unitario,subtotal,lugar_compra,productos(nombre,sku)"
+                "precio_unitario,costo_unitario,subtotal,lugar_compra,productos(nombre,sku)"
                 ")"
             ) \
             .eq("id_empresa", id_empresa) \
@@ -175,6 +259,25 @@ def crear_cliente(datos_cliente):
         if "duplicate key" in str(e).lower():
             return {"exito": False, "mensaje": "Ya existe un cliente con ese RFC en la empresa"}
         return {"exito": False, "mensaje": "No se pudo guardar el cliente"}
+
+
+def crear_cliente_rapido(id_empresa, nombre):
+    datos_cliente = {
+        "id_empresa": id_empresa,
+        "nombre": " ".join(str(nombre).split()),
+        "telefono": None,
+        "email": None,
+        "rfc": None,
+        "tipo_cliente": "Minorista",
+        "limite_credito": 0,
+        "dias_credito": 0,
+        "activo": True
+    }
+    resultado = crear_cliente(datos_cliente)
+    if resultado.get("exito"):
+        resultado["mensaje"] = "Cliente agregado al directorio. Completa sus datos después."
+    return resultado
+
 
 def actualizar_cliente(id_cliente, id_empresa, datos_cliente):
     try:
@@ -545,7 +648,19 @@ def registrar_abono_cxp(id_compra, monto_abono, metodo_pago):
 def obtener_cuentas_por_cobrar(id_empresa):
     try:
         response = supabase.table("ventas") \
-            .select("*, clientes(nombre, telefono, limite_credito, dias_credito), pagos_cxc(*)") \
+            .select(
+                "id_venta,id_empresa,id_cliente,cliente,total,metodo_pago,tipo_venta,"
+                "monto_pagado,estado_pago,fecha,fecha_vencimiento,"
+                "clientes(nombre,telefono,limite_credito,dias_credito),"
+                "ventas_detalle("
+                "id_producto,nombre_producto,tipo_item,cantidad,precio_unitario,subtotal,"
+                "productos(nombre,sku)"
+                "),"
+                "pagos_cxc("
+                "id_pago_cxc,id_empresa,id_venta,monto,metodo_pago,descripcion,"
+                "referencia,notas,fecha_pago,saldo_antes,saldo_despues"
+                ")"
+            ) \
             .eq("id_empresa", id_empresa) \
             .eq("tipo_venta", "Credito") \
             .order("fecha_vencimiento", desc=False) \
@@ -556,13 +671,22 @@ def obtener_cuentas_por_cobrar(id_empresa):
         print(f"Error al obtener CxC: {e}")
         return None
 
-def registrar_abono_cxc(id_empresa, id_venta, monto, metodo_pago, referencia=None, notas=None):
+def registrar_abono_cxc(
+    id_empresa,
+    id_venta,
+    monto,
+    metodo_pago,
+    descripcion=None,
+    referencia=None,
+    notas=None
+):
     try:
         response = supabase.rpc("bizpilot_registrar_abono_cxc", {
             "p_id_empresa": id_empresa,
             "p_id_venta": id_venta,
             "p_monto": monto,
             "p_metodo_pago": metodo_pago,
+            "p_descripcion": descripcion,
             "p_referencia": referencia,
             "p_notas": notas
         }).execute()
@@ -587,3 +711,37 @@ def registrar_abono_cxc(id_empresa, id_venta, monto, metodo_pago, referencia=Non
             if mensaje in texto_error:
                 return {"exito": False, "mensaje": mensaje}
         return {"exito": False, "mensaje": "No se pudo registrar el cobro"}
+
+def actualizar_fecha_movimiento_cxc(
+    id_empresa,
+    tipo_movimiento,
+    id_movimiento,
+    fecha
+):
+    try:
+        fecha_iso = fecha.isoformat() if hasattr(fecha, "isoformat") else str(fecha)
+        response = supabase.rpc("bizpilot_actualizar_fecha_movimiento_cxc", {
+            "p_id_empresa": id_empresa,
+            "p_tipo_movimiento": tipo_movimiento,
+            "p_id_movimiento": id_movimiento,
+            "p_fecha": fecha_iso
+        }).execute()
+
+        resultado = response.data
+        if isinstance(resultado, list) and len(resultado) == 1:
+            resultado = resultado[0]
+        if isinstance(resultado, dict):
+            return resultado
+        return {"exito": False, "mensaje": "Supabase no confirmó el cambio de fecha"}
+    except Exception as e:
+        print(f"Error al actualizar fecha de CxC: {e}")
+        texto_error = str(e)
+        mensajes_controlados = [
+            "El movimiento no existe o no pertenece a esta empresa",
+            "El tipo de movimiento no es válido",
+            "La fecha no es válida"
+        ]
+        for mensaje in mensajes_controlados:
+            if mensaje in texto_error:
+                return {"exito": False, "mensaje": mensaje}
+        return {"exito": False, "mensaje": "No se pudo actualizar la fecha del movimiento"}

@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BizPilot | Dashboard</title>
-    <link rel="stylesheet" href="/static/dashboard_style.css?v=20260810-2">
+    <link rel="stylesheet" href="/static/dashboard_style.css?v=altas-rapidas-20260811-1">
 </head>
 <body>
     <header class="app-header">
@@ -105,9 +105,34 @@
 
                         <form id="formVentaRapida" onsubmit="agregarVentaRapida(event)">
                             <div class="form-grid quick-sale-grid">
+                                <div class="input-group quick-sale-client">
+                                    <label for="venta-rapida-cliente">Cliente de la venta</label>
+                                    <div class="quick-inline-control">
+                                        <select id="venta-rapida-cliente" onchange="sincronizarClienteVentaRapida('rapida')">
+                                            <option value="">Público general</option>
+                                        </select>
+                                        <button type="button" class="btn-inline-add" onclick="mostrarAltaClienteRapido()">
+                                            + Nuevo
+                                        </button>
+                                    </div>
+                                    <div id="venta-rapida-alta-cliente" class="quick-inline-create oculto">
+                                        <label for="venta-rapida-cliente-nombre">Nombre del cliente nuevo</label>
+                                        <input type="text" id="venta-rapida-cliente-nombre" maxlength="120" placeholder="Ej. Juan Pérez">
+                                        <div class="quick-inline-actions">
+                                            <button type="button" id="btn-guardar-cliente-rapido" class="btn-primary" onclick="guardarClienteRapido()">Guardar cliente</button>
+                                            <button type="button" class="btn-secondary" onclick="ocultarAltaClienteRapido()">Cancelar</button>
+                                        </div>
+                                    </div>
+                                    <small>El cliente se aplicará a todo el ticket.</small>
+                                </div>
                                 <div class="input-group quick-sale-name">
                                     <label for="venta-rapida-nombre">Producto</label>
                                     <input type="text" id="venta-rapida-nombre" maxlength="160" required placeholder="Ej. Crema facial">
+                                    <label class="quick-save-option" for="venta-rapida-guardar-producto">
+                                        <input type="checkbox" id="venta-rapida-guardar-producto" checked>
+                                        <span>Agregar también a Inventario y almacén</span>
+                                    </label>
+                                    <small id="venta-rapida-producto-estado">Se guardará con SKU automático y existencia inicial de 0.</small>
                                 </div>
                                 <div class="input-group">
                                     <label for="venta-rapida-cantidad">Cantidad</label>
@@ -133,7 +158,7 @@
                                 </div>
                             </div>
                             <div class="form-actions">
-                                <button type="submit" class="btn-primary">Agregar al ticket</button>
+                                <button type="submit" id="btn-agregar-venta-rapida" class="btn-primary">Agregar al ticket</button>
                                 <button type="button" class="btn-secondary" onclick="ocultarVentaRapida()">Cancelar</button>
                             </div>
                         </form>
@@ -152,7 +177,7 @@
 
                     <div class="input-group" style="margin-bottom: 0.75rem;">
                         <label>Cliente</label>
-                        <select id="pos-cliente" onchange="actualizarCondicionesVenta()">
+                        <select id="pos-cliente" onchange="sincronizarClienteVentaRapida('pos'); actualizarCondicionesVenta()">
                             <option value="">Público general</option>
                         </select>
                     </div>
@@ -780,6 +805,10 @@
                         <span>Artículos</span>
                         <strong id="compras-clientes-articulos">0</strong>
                     </article>
+                    <article class="finance-summary-card success">
+                        <span>Vendido hoy</span>
+                        <strong id="compras-clientes-hoy">$0.00</strong>
+                    </article>
                 </div>
 
                 <div class="client-filters" aria-label="Filtros de compras de clientes">
@@ -826,11 +855,14 @@
 
         <div id="vista-fin-cxc" class="module-container oculto">
             <div class="modulo-header">
-                <h2>Cuentas por Cobrar</h2>
+                <div>
+                    <p class="eyebrow">Finanzas por cliente</p>
+                    <h2>Cuentas por Cobrar</h2>
+                </div>
                 <button type="button" class="btn-secondary" onclick="obtenerCXCAPI()">Actualizar cartera</button>
             </div>
 
-            <div class="finance-summary-grid" aria-label="Resumen de cuentas por cobrar">
+            <div class="finance-summary-grid cxc-summary-grid" aria-label="Resumen de cuentas por cobrar">
                 <article class="finance-summary-card">
                     <span>Cartera pendiente</span>
                     <strong id="cxc-resumen-pendiente">$0.00</strong>
@@ -844,32 +876,64 @@
                     <strong id="cxc-resumen-por-vencer">$0.00</strong>
                 </article>
                 <article class="finance-summary-card success">
-                    <span>Cobrado en la cartera</span>
+                    <span>Cobrado hoy</span>
+                    <strong id="cxc-resumen-cobrado-hoy">$0.00</strong>
+                </article>
+                <article class="finance-summary-card success">
+                    <span>Cobrado histórico</span>
                     <strong id="cxc-resumen-cobrado">$0.00</strong>
+                </article>
+                <article class="finance-summary-card">
+                    <span>Clientes con saldo</span>
+                    <strong id="cxc-resumen-clientes">0</strong>
                 </article>
             </div>
 
             <div id="modal-pagos-cxc" class="card-form oculto cxc-detail-card">
                 <div class="cxc-detail-header">
                     <div>
-                        <p class="eyebrow">Venta a crédito</p>
-                        <h3>Cuenta #<span id="cxc-detalle-id"></span> · <span id="cxc-detalle-cliente"></span></h3>
+                        <p class="eyebrow">Movimientos consolidados</p>
+                        <h3 id="cxc-detalle-cliente">Cliente</h3>
                     </div>
                     <button type="button" class="btn-secondary" onclick="cerrarModalCXC()">Cerrar</button>
                 </div>
 
+                <div id="cxc-detalle-resumen" class="cxc-account-summary"></div>
+
+                <h4>Créditos del cliente</h4>
+                <div class="tabla-container">
+                    <table class="tabla-custom">
+                        <thead>
+                            <tr>
+                                <th>Cuenta</th>
+                                <th>Venta</th>
+                                <th>Vencimiento</th>
+                                <th>Total</th>
+                                <th>Cobrado</th>
+                                <th>Saldo</th>
+                                <th>Estado</th>
+                                <th>Acción</th>
+                            </tr>
+                        </thead>
+                        <tbody id="cxc-cuentas-cliente-body"></tbody>
+                    </table>
+                </div>
+
                 <div class="cxc-detail-grid">
                     <section>
-                        <div id="cxc-detalle-resumen" class="cxc-account-summary"></div>
-                        <h4>Historial de cobros</h4>
-                        <div class="tabla-container">
+                        <h4>Ventas y cobros</h4>
+                        <div class="tabla-container cxc-movements-table">
                             <table class="tabla-custom">
                                 <thead>
                                     <tr>
                                         <th>Fecha</th>
-                                        <th>Método</th>
-                                        <th>Referencia</th>
-                                        <th>Monto</th>
+                                        <th>Tipo</th>
+                                        <th>Cuenta</th>
+                                        <th>Descripción / precio de venta</th>
+                                        <th>Importe</th>
+                                        <th>Saldo antes</th>
+                                        <th>Saldo después</th>
+                                        <th>Acción</th>
                                     </tr>
                                 </thead>
                                 <tbody id="cxc-historial-body"></tbody>
@@ -877,8 +941,9 @@
                         </div>
                     </section>
 
-                    <aside id="caja-nuevo-abono-cxc" class="cxc-payment-box">
-                        <h4>Registrar cobro</h4>
+                    <aside id="caja-nuevo-abono-cxc" class="cxc-payment-box oculto">
+                        <h4>Cobrar cuenta <span id="cxc-abono-cuenta"></span></h4>
+                        <p id="cxc-abono-saldo" class="table-summary"></p>
                         <div class="input-group">
                             <label for="cxc-abono-monto">Monto</label>
                             <input type="number" id="cxc-abono-monto" min="0.01" step="0.01">
@@ -893,6 +958,10 @@
                             </select>
                         </div>
                         <div class="input-group">
+                            <label for="cxc-abono-descripcion">Descripción del movimiento</label>
+                            <input type="text" id="cxc-abono-descripcion" maxlength="200" required placeholder="Ej. Abono semanal">
+                        </div>
+                        <div class="input-group">
                             <label for="cxc-abono-referencia">Referencia (opcional)</label>
                             <input type="text" id="cxc-abono-referencia" maxlength="80">
                         </div>
@@ -901,6 +970,7 @@
                             <input type="text" id="cxc-abono-notas" maxlength="200">
                         </div>
                         <button type="button" class="btn-primary" onclick="procesarAbonoCXC()">Guardar cobro</button>
+                        <button type="button" class="btn-secondary cxc-cancel-payment" onclick="cancelarCobroCXC()">Cancelar</button>
                     </aside>
                 </div>
             </div>
@@ -908,15 +978,15 @@
             <div class="client-filters" aria-label="Filtros de cuentas por cobrar">
                 <div class="input-group client-search">
                     <label for="cxc-busqueda">Buscar</label>
-                    <input type="search" id="cxc-busqueda" placeholder="Folio o cliente" oninput="filtrarCXC()">
+                    <input type="search" id="cxc-busqueda" placeholder="Cliente, producto o folio" oninput="filtrarCXC()">
                 </div>
                 <div class="input-group">
                     <label for="cxc-filtro-estado">Estado</label>
                     <select id="cxc-filtro-estado" onchange="filtrarCXC()">
                         <option value="todos">Todos</option>
                         <option value="pendiente">Pendientes</option>
-                        <option value="vencido">Vencidas</option>
-                        <option value="pagado">Pagadas</option>
+                        <option value="vencido">Vencidos</option>
+                        <option value="pagado">Pagados</option>
                     </select>
                 </div>
                 <div class="input-group">
@@ -925,6 +995,15 @@
                         <option value="todos">Todos</option>
                     </select>
                 </div>
+                <div class="input-group">
+                    <label for="cxc-fecha-inicio">Venta desde</label>
+                    <input type="date" id="cxc-fecha-inicio" onchange="filtrarCXC()">
+                </div>
+                <div class="input-group">
+                    <label for="cxc-fecha-fin">Venta hasta</label>
+                    <input type="date" id="cxc-fecha-fin" onchange="filtrarCXC()">
+                </div>
+                <button type="button" class="btn-secondary client-refresh" onclick="restablecerFiltrosCXC()">Limpiar</button>
             </div>
 
             <p id="cxc-resumen-registros" class="table-summary" aria-live="polite"></p>
@@ -933,13 +1012,13 @@
                 <table class="tabla-custom">
                     <thead>
                         <tr>
-                            <th>Folio</th>
                             <th>Cliente</th>
-                            <th>Venta</th>
-                            <th>Vencimiento</th>
-                            <th>Total</th>
+                            <th>Créditos</th>
+                            <th>Total vendido</th>
                             <th>Cobrado</th>
                             <th>Saldo</th>
+                            <th>Vencido</th>
+                            <th>Cobrado hoy</th>
                             <th>Estado</th>
                             <th>Acción</th>
                         </tr>
@@ -1056,6 +1135,6 @@
 
     </main>
 
-    <script src="/static/dashboard.js?v=20260810-2"></script>
+    <script src="/static/dashboard.js?v=altas-rapidas-20260811-1"></script>
 </body>
 </html>

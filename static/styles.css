@@ -1,7 +1,7 @@
 body { 
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-    background-color: #ffffff; 
-    color: #f4eaea; 
+    background-color: #9f9f9f; 
+    color: #0b0b0b; 
     height: 100vh;
     margin: 0;
     display: flex; 
@@ -10,20 +10,23 @@ body {
 }
 
 .login-container { 
-    background: rgb(206, 206, 206); 
+    background: rgb(205, 204, 204); 
     padding: 3rem 2.5rem; 
-    border-radius: 16px; 
-    box-shadow: 0 10px 25px rgba(0,0,0,0.05); 
+    border-radius: 64px; 
+    box-shadow: 0 10px 25px rgba(82, 82, 82, 0.05); 
     width: 100%; 
     max-width: 400px; 
+    padding-left: 20rem;
+    padding-right: 20rem;
+
 }
 
-.login-header { text-align: center; margin-bottom: 2rem; }
-.login-header h2 { margin: 0; font-size: 2rem; color: #111827; letter-spacing: -1px; }
-.login-header p { color: #6b7280; margin-top: 0.5rem; font-size: 0.95rem; }
+.login-header { text-align: center; margin-bottom: 4rem; font-weight: 500;}
+.login-header h2 { margin: 0; font-size: 3rem; color: #000000; letter-spacing: 5px;}
+.login-header p { color: #050505; margin-top: .5rem; font-size: 1.5rem; font-family:'Gill Sans', 'Gill Sans MT', Calibri, 'Trebuchet MS', sans-serif; }
 
-.input-group { margin-bottom: 1.5rem; }
-.input-group label { display: block; margin-bottom: 0.5rem; font-size: 0.85rem; font-weight: 600; color: #374151; }
+.input-group { margin-bottom: 3rem; }
+.input-group label { display: block; margin-bottom: 1.2rem; font-size: 0.85rem; font-weight: 600; color: #374151; }
 .input-group input { width: 100%; padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 8px; font-size: 1rem; box-sizing: border-box; transition: border-color 0.2s; }
 .input-group input:focus { outline: none; border-color: #111827; }
 
