@@ -41,13 +41,7 @@ const configuracionAreas = {
         moduloInicial: 'rrhh-empleados',
         modulos: [
             'rrhh-empleados',
-            'rrhh-asistencias',
-            'rrhh-vacaciones',
-            'rrhh-incidencias',
-            'rrhh-accidentes',
-            'rrhh-avisos',
-            'rrhh-medidas',
-            'rrhh-documentos'
+            'rrhh-administrativo'
         ]
     },
     copilot: {
@@ -77,14 +71,8 @@ const configuracionModulos = {
     'crm-embudo': { nombre: 'Embudo y cotizaciones', area: 'crm', vistaId: 'vista-crm-embudo', alCargar: obtenerEmbudoCRM },
     'crm-negociaciones': { nombre: 'Negociaciones cerradas', area: 'crm', vistaId: 'vista-crm-negociaciones', alCargar: obtenerNegociacionesCerradasCRM },
 
-    'rrhh-empleados': { nombre: 'Empleados', area: 'rrhh', vistaId: 'vista-rrhh-empleados' },
-    'rrhh-asistencias': { nombre: 'Asistencias', area: 'rrhh', vistaId: 'vista-rrhh-asistencias' },
-    'rrhh-vacaciones': { nombre: 'Vacaciones y permisos', area: 'rrhh', vistaId: 'vista-rrhh-vacaciones' },
-    'rrhh-incidencias': { nombre: 'Incidencias', area: 'rrhh', vistaId: 'vista-rrhh-incidencias' },
-    'rrhh-accidentes': { nombre: 'Accidentes', area: 'rrhh', vistaId: 'vista-rrhh-accidentes' },
-    'rrhh-avisos': { nombre: 'Avisos internos', area: 'rrhh', vistaId: 'vista-rrhh-avisos' },
-    'rrhh-medidas': { nombre: 'Medidas disciplinarias', area: 'rrhh', vistaId: 'vista-rrhh-medidas' },
-    'rrhh-documentos': { nombre: 'Documentos', area: 'rrhh', vistaId: 'vista-rrhh-documentos' },
+    'rrhh-empleados': { nombre: 'Empleados', area: 'rrhh', vistaId: 'vista-rrhh-empleados', alCargar: obtenerEmpleadosRRHH },
+    'rrhh-administrativo': { nombre: 'Administrativo', area: 'rrhh', vistaId: 'vista-rrhh-administrativo', alCargar: iniciarAdministrativoRRHH },
 
     'ia-copilot': { nombre: 'BizPilot CoPilot', area: 'copilot', vistaId: 'vista-ia-copilot' }
 };
@@ -7887,6 +7875,591 @@ async function obtenerDashboardComercial() {
             boton.disabled = false;
             boton.textContent = 'Actualizar';
         }
+    }
+}
+
+
+// ==========================================
+// RR. HH.: EMPLEADOS Y ADMINISTRATIVO
+// ==========================================
+let empleadosRRHHGlobal = [];
+let empleadoRRHHEditandoId = null;
+let movimientosRRHHGlobal = [];
+let solicitudEmpleadosRRHH = 0;
+let solicitudMovimientosRRHH = 0;
+
+function fechaHoyLocalRRHH() {
+    const hoy = new Date();
+    const anio = hoy.getFullYear();
+    const mes = String(hoy.getMonth() + 1).padStart(2, '0');
+    const dia = String(hoy.getDate()).padStart(2, '0');
+    return `${anio}-${mes}-${dia}`;
+}
+
+function calcularEdadRRHH(fechaNacimiento) {
+    if (!fechaNacimiento) return null;
+    const fecha = new Date(`${String(fechaNacimiento).slice(0, 10)}T00:00:00`);
+    if (Number.isNaN(fecha.getTime())) return null;
+
+    const hoy = new Date();
+    let edad = hoy.getFullYear() - fecha.getFullYear();
+    const mes = hoy.getMonth() - fecha.getMonth();
+    if (mes < 0 || (mes === 0 && hoy.getDate() < fecha.getDate())) {
+        edad -= 1;
+    }
+    return edad >= 0 ? edad : null;
+}
+
+function empleadoRRHHPorId(idEmpleado) {
+    const id = Number(idEmpleado);
+    return empleadosRRHHGlobal.find(
+        empleado => Number(empleado.id_empleado) === id
+    ) || null;
+}
+
+function renderizarResumenEmpleadosRRHH() {
+    const activos = empleadosRRHHGlobal.filter(
+        empleado => Boolean(empleado.activo)
+    ).length;
+    document.getElementById('rrhh-empleados-total').textContent = empleadosRRHHGlobal.length;
+    document.getElementById('rrhh-empleados-activos').textContent = activos;
+    document.getElementById('rrhh-empleados-bajas').textContent = empleadosRRHHGlobal.length - activos;
+}
+
+function renderizarEmpleadosRRHH(empleados) {
+    const cuerpo = document.getElementById('rrhh-empleados-body');
+    const resumen = document.getElementById('rrhh-empleados-resumen');
+    if (!cuerpo || !resumen) return;
+
+    resumen.textContent = `${empleados.length} de ${empleadosRRHHGlobal.length} empleado(s)`;
+
+    if (!empleados.length) {
+        cuerpo.innerHTML = `
+            <tr>
+                <td colspan="8" style="text-align:center;">
+                    No hay empleados que coincidan con los filtros.
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
+    cuerpo.innerHTML = empleados.map(empleado => {
+        const edad = calcularEdadRRHH(empleado.fecha_nacimiento);
+        const activo = Boolean(empleado.activo);
+        const claseEstado = activo
+            ? 'rrhh-status-active'
+            : 'rrhh-status-inactive';
+        const textoEstado = activo ? 'Activo' : 'Baja';
+
+        return `
+            <tr>
+                <td>
+                    <strong>${escaparHTML(empleado.nombre_completo)}</strong>
+                    <div class="rrhh-sensitive">RFC y NSS en el expediente</div>
+                </td>
+                <td>${escaparHTML(empleado.puesto)}</td>
+                <td>${edad === null ? '-' : edad}</td>
+                <td>${formatearFechaCXC(empleado.fecha_ingreso)}</td>
+                <td>${escaparHTML(empleado.telefono)}</td>
+                <td><strong>${formatearMoneda(empleado.salario)}</strong></td>
+                <td><span class="${claseEstado}">${textoEstado}</span></td>
+                <td>
+                    <button type="button" class="btn-table" onclick="editarEmpleadoRRHH(${Number(empleado.id_empleado)})">
+                        Editar
+                    </button>
+                    <button type="button" class="btn-table btn-table-state" onclick="abrirMovimientoEmpleadoRRHH(${Number(empleado.id_empleado)})">
+                        Admin
+                    </button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function filtrarEmpleadosRRHH() {
+    const busqueda = normalizarBusqueda(
+        document.getElementById('rrhh-empleados-busqueda')?.value
+    );
+    const estado = document.getElementById('rrhh-empleados-estado')?.value || 'todos';
+
+    const filtrados = empleadosRRHHGlobal.filter(empleado => {
+        const texto = normalizarBusqueda([
+            empleado.nombre_completo,
+            empleado.puesto,
+            empleado.rfc,
+            empleado.numero_seguridad_social,
+            empleado.telefono,
+            empleado.telefono_emergencia
+        ].join(' '));
+        const coincideBusqueda = !busqueda || texto.includes(busqueda);
+        const coincideEstado = estado === 'todos'
+            || (estado === 'activos' && empleado.activo)
+            || (estado === 'bajas' && !empleado.activo);
+        return coincideBusqueda && coincideEstado;
+    });
+
+    renderizarEmpleadosRRHH(filtrados);
+}
+
+async function obtenerEmpleadosRRHH() {
+    const sesion = obtenerSesion();
+    const estado = document.getElementById('rrhh-empleados-estado-carga');
+    if (!sesion?.id_empresa) return;
+
+    const numeroSolicitud = ++solicitudEmpleadosRRHH;
+    if (estado) {
+        estado.classList.remove('error');
+        estado.textContent = 'Cargando empleados...';
+    }
+
+    try {
+        const respuesta = await fetch(
+            `/api/rrhh/empleados/${sesion.id_empresa}`,
+            { cache: 'no-store' }
+        );
+        const resultado = await respuesta.json();
+        if (!respuesta.ok || !resultado.exito) {
+            throw new Error(
+                mensajeErrorAPI(resultado, 'No se pudieron cargar los empleados.')
+            );
+        }
+        if (numeroSolicitud !== solicitudEmpleadosRRHH) return;
+
+        empleadosRRHHGlobal = Array.isArray(resultado.data)
+            ? resultado.data
+            : [];
+        renderizarResumenEmpleadosRRHH();
+        filtrarEmpleadosRRHH();
+        actualizarSelectorEmpleadosRRHH();
+        if (estado) {
+            estado.textContent = empleadosRRHHGlobal.length
+                ? 'Expedientes actualizados.'
+                : 'Todavia no hay empleados registrados.';
+        }
+    } catch (error) {
+        if (numeroSolicitud !== solicitudEmpleadosRRHH) return;
+        console.error('Error al cargar empleados de RR. HH.:', error);
+        empleadosRRHHGlobal = [];
+        renderizarResumenEmpleadosRRHH();
+        renderizarEmpleadosRRHH([]);
+        actualizarSelectorEmpleadosRRHH();
+        if (estado) {
+            estado.classList.add('error');
+            estado.textContent = error.message || 'No se pudieron cargar los empleados.';
+        }
+    }
+}
+
+function mostrarFormularioEmpleadoRRHH(idEmpleado = null) {
+    const formulario = document.getElementById('form-empleado-rrhh');
+    if (!formulario) return;
+
+    formulario.reset();
+    empleadoRRHHEditandoId = idEmpleado === null
+        ? null
+        : Number(idEmpleado);
+    document.getElementById('rrhh-empleado-id').value = empleadoRRHHEditandoId || '';
+    document.getElementById('rrhh-empleado-form-titulo').textContent = empleadoRRHHEditandoId
+        ? 'Editar empleado'
+        : 'Nuevo empleado';
+
+    const hoy = fechaHoyLocalRRHH();
+    document.getElementById('rrhh-empleado-nacimiento').max = hoy;
+    document.getElementById('rrhh-empleado-ingreso').value = hoy;
+
+    formulario.classList.remove('oculto');
+    formulario.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    document.getElementById('rrhh-empleado-nombre').focus();
+}
+
+function ocultarFormularioEmpleadoRRHH() {
+    const formulario = document.getElementById('form-empleado-rrhh');
+    if (!formulario) return;
+    formulario.reset();
+    formulario.classList.add('oculto');
+    empleadoRRHHEditandoId = null;
+    document.getElementById('rrhh-empleado-id').value = '';
+}
+
+function editarEmpleadoRRHH(idEmpleado) {
+    const empleado = empleadoRRHHPorId(idEmpleado);
+    if (!empleado) {
+        alert('Empleado no encontrado. Actualiza la lista.');
+        return;
+    }
+
+    mostrarFormularioEmpleadoRRHH(idEmpleado);
+    document.getElementById('rrhh-empleado-nombre').value = empleado.nombre_completo || '';
+    document.getElementById('rrhh-empleado-nacimiento').value = String(empleado.fecha_nacimiento || '').slice(0, 10);
+    document.getElementById('rrhh-empleado-ingreso').value = String(empleado.fecha_ingreso || '').slice(0, 10);
+    document.getElementById('rrhh-empleado-puesto').value = empleado.puesto || '';
+    document.getElementById('rrhh-empleado-salario').value = Number(empleado.salario || 0);
+    document.getElementById('rrhh-empleado-telefono').value = empleado.telefono || '';
+    document.getElementById('rrhh-empleado-emergencia').value = empleado.telefono_emergencia || '';
+    document.getElementById('rrhh-empleado-rfc').value = empleado.rfc || '';
+    document.getElementById('rrhh-empleado-nss').value = empleado.numero_seguridad_social || '';
+}
+
+async function guardarEmpleadoRRHH(event) {
+    event.preventDefault();
+    const sesion = obtenerSesion();
+    const formulario = document.getElementById('form-empleado-rrhh');
+    const boton = formulario.querySelector('button[type="submit"]');
+
+    if (!sesion?.id_empresa || !sesion?.id_usuario) {
+        alert('La sesion no es valida. Inicia sesion nuevamente.');
+        return;
+    }
+
+    const payload = {
+        id_empresa: Number(sesion.id_empresa),
+        id_usuario: Number(sesion.id_usuario),
+        nombre_completo: document.getElementById('rrhh-empleado-nombre').value.trim(),
+        fecha_nacimiento: document.getElementById('rrhh-empleado-nacimiento').value,
+        fecha_ingreso: document.getElementById('rrhh-empleado-ingreso').value,
+        salario: Number(document.getElementById('rrhh-empleado-salario').value),
+        puesto: document.getElementById('rrhh-empleado-puesto').value.trim(),
+        telefono: document.getElementById('rrhh-empleado-telefono').value.trim(),
+        rfc: document.getElementById('rrhh-empleado-rfc').value.trim().toUpperCase(),
+        numero_seguridad_social: document.getElementById('rrhh-empleado-nss').value.trim(),
+        telefono_emergencia: document.getElementById('rrhh-empleado-emergencia').value.trim()
+    };
+
+    if (
+        !payload.nombre_completo
+        || !payload.fecha_nacimiento
+        || !payload.fecha_ingreso
+        || !payload.puesto
+        || !payload.telefono
+        || !payload.rfc
+        || !payload.numero_seguridad_social
+        || !payload.telefono_emergencia
+        || !Number.isFinite(payload.salario)
+        || payload.salario < 0
+    ) {
+        alert('Completa correctamente todos los campos.');
+        return;
+    }
+
+    if (!/^[0-9]{11}$/.test(payload.numero_seguridad_social)) {
+        alert('El numero de seguridad social debe tener 11 digitos.');
+        return;
+    }
+
+    const editando = Number.isInteger(empleadoRRHHEditandoId);
+    const url = editando
+        ? `/api/rrhh/empleados/${empleadoRRHHEditandoId}`
+        : '/api/rrhh/empleados';
+
+    boton.disabled = true;
+    boton.textContent = 'Guardando...';
+    try {
+        const respuesta = await fetch(url, {
+            method: editando ? 'PUT' : 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const resultado = await respuesta.json();
+        if (!respuesta.ok || !resultado.exito) {
+            throw new Error(
+                mensajeErrorAPI(resultado, 'No se pudo guardar el empleado.')
+            );
+        }
+
+        alert(resultado.mensaje || 'Empleado guardado exitosamente.');
+        ocultarFormularioEmpleadoRRHH();
+        await obtenerEmpleadosRRHH();
+    } catch (error) {
+        console.error('Error al guardar empleado de RR. HH.:', error);
+        alert(error.message || 'No se pudo guardar el empleado.');
+    } finally {
+        boton.disabled = false;
+        boton.textContent = 'Guardar empleado';
+    }
+}
+
+function empleadoMovimientoRRHH(movimiento) {
+    const relacion = movimiento?.empleados_rrhh;
+    if (Array.isArray(relacion)) return relacion[0] || null;
+    return relacion || empleadoRRHHPorId(movimiento?.id_empleado);
+}
+
+function claseMovimientoRRHH(tipo) {
+    const clases = {
+        Alta: 'rrhh-movement-alta',
+        Baja: 'rrhh-movement-baja',
+        Suspension: 'rrhh-movement-suspension',
+        Permiso: 'rrhh-movement-permiso',
+        'Carta compromiso': 'rrhh-movement-carta'
+    };
+    return `rrhh-movement-badge ${clases[tipo] || ''}`;
+}
+
+function renderizarMovimientosRRHH(movimientos) {
+    const cuerpo = document.getElementById('rrhh-admin-body');
+    const resumen = document.getElementById('rrhh-admin-resumen');
+    if (!cuerpo || !resumen) return;
+
+    resumen.textContent = `${movimientos.length} de ${movimientosRRHHGlobal.length} movimiento(s)`;
+    if (!movimientos.length) {
+        cuerpo.innerHTML = `
+            <tr>
+                <td colspan="5" style="text-align:center;">
+                    No hay movimientos que coincidan con los filtros.
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
+    cuerpo.innerHTML = movimientos.map(movimiento => {
+        const empleado = empleadoMovimientoRRHH(movimiento) || {};
+        const periodo = movimiento.fecha_fin
+            ? `${formatearFechaCXC(movimiento.fecha_movimiento)} a ${formatearFechaCXC(movimiento.fecha_fin)}`
+            : '-';
+        return `
+            <tr>
+                <td>${formatearFechaCXC(movimiento.fecha_movimiento)}</td>
+                <td>
+                    <strong>${escaparHTML(empleado.nombre_completo || 'Empleado')}</strong>
+                    <div class="rrhh-sensitive">${escaparHTML(empleado.puesto || '')}</div>
+                </td>
+                <td><span class="${claseMovimientoRRHH(movimiento.tipo_movimiento)}">${escaparHTML(movimiento.tipo_movimiento)}</span></td>
+                <td>${periodo}</td>
+                <td>${escaparHTML(movimiento.detalle)}</td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function filtrarMovimientosRRHH() {
+    const busqueda = normalizarBusqueda(
+        document.getElementById('rrhh-admin-busqueda')?.value
+    );
+    const tipo = document.getElementById('rrhh-admin-tipo')?.value || 'todos';
+
+    const filtrados = movimientosRRHHGlobal.filter(movimiento => {
+        const empleado = empleadoMovimientoRRHH(movimiento) || {};
+        const texto = normalizarBusqueda([
+            empleado.nombre_completo,
+            empleado.puesto,
+            movimiento.detalle,
+            movimiento.tipo_movimiento
+        ].join(' '));
+        return (!busqueda || texto.includes(busqueda))
+            && (tipo === 'todos' || movimiento.tipo_movimiento === tipo);
+    });
+    renderizarMovimientosRRHH(filtrados);
+}
+
+async function obtenerMovimientosRRHH() {
+    const sesion = obtenerSesion();
+    const estado = document.getElementById('rrhh-admin-estado-carga');
+    if (!sesion?.id_empresa) return;
+
+    const numeroSolicitud = ++solicitudMovimientosRRHH;
+    if (estado) {
+        estado.classList.remove('error');
+        estado.textContent = 'Cargando movimientos administrativos...';
+    }
+
+    try {
+        const respuesta = await fetch(
+            `/api/rrhh/administrativo/${sesion.id_empresa}`,
+            { cache: 'no-store' }
+        );
+        const resultado = await respuesta.json();
+        if (!respuesta.ok || !resultado.exito) {
+            throw new Error(
+                mensajeErrorAPI(resultado, 'No se pudieron cargar los movimientos.')
+            );
+        }
+        if (numeroSolicitud !== solicitudMovimientosRRHH) return;
+
+        movimientosRRHHGlobal = Array.isArray(resultado.data)
+            ? resultado.data
+            : [];
+        filtrarMovimientosRRHH();
+        if (estado) {
+            estado.textContent = movimientosRRHHGlobal.length
+                ? 'Historial administrativo actualizado.'
+                : 'Todavia no hay movimientos administrativos.';
+        }
+    } catch (error) {
+        if (numeroSolicitud !== solicitudMovimientosRRHH) return;
+        console.error('Error al cargar movimientos de RR. HH.:', error);
+        movimientosRRHHGlobal = [];
+        renderizarMovimientosRRHH([]);
+        if (estado) {
+            estado.classList.add('error');
+            estado.textContent = error.message || 'No se pudieron cargar los movimientos.';
+        }
+    }
+}
+
+async function iniciarAdministrativoRRHH() {
+    if (!empleadosRRHHGlobal.length) {
+        await obtenerEmpleadosRRHH();
+    } else {
+        actualizarSelectorEmpleadosRRHH();
+    }
+    await obtenerMovimientosRRHH();
+}
+
+function empleadosElegiblesMovimientoRRHH(tipo) {
+    if (tipo === 'Alta') {
+        return empleadosRRHHGlobal.filter(empleado => !empleado.activo);
+    }
+    if (tipo === 'Baja') {
+        return empleadosRRHHGlobal.filter(empleado => empleado.activo);
+    }
+    return empleadosRRHHGlobal;
+}
+
+function actualizarSelectorEmpleadosRRHH(idPreferido = null) {
+    const selector = document.getElementById('rrhh-movimiento-empleado');
+    const tipo = document.getElementById('rrhh-movimiento-tipo')?.value || 'Carta compromiso';
+    if (!selector) return;
+
+    const seleccionado = idPreferido ?? selector.value;
+    const elegibles = empleadosElegiblesMovimientoRRHH(tipo);
+    selector.innerHTML = elegibles.length
+        ? elegibles.map(empleado => `
+            <option value="${Number(empleado.id_empleado)}">
+                ${escaparHTML(empleado.nombre_completo)} - ${escaparHTML(empleado.puesto)}
+            </option>
+        `).join('')
+        : '<option value="">No hay empleados disponibles</option>';
+
+    if (elegibles.some(
+        empleado => Number(empleado.id_empleado) === Number(seleccionado)
+    )) {
+        selector.value = String(seleccionado);
+    }
+}
+
+function actualizarCamposMovimientoRRHH(idPreferido = null) {
+    const tipo = document.getElementById('rrhh-movimiento-tipo').value;
+    const grupoFechaFin = document.getElementById('rrhh-movimiento-fecha-fin-grupo');
+    const fechaFin = document.getElementById('rrhh-movimiento-fecha-fin');
+    const usaFechaFin = tipo === 'Suspension' || tipo === 'Permiso';
+
+    grupoFechaFin.classList.toggle('oculto', !usaFechaFin);
+    if (!usaFechaFin) fechaFin.value = '';
+    actualizarSelectorEmpleadosRRHH(idPreferido);
+}
+
+function mostrarFormularioMovimientoRRHH(idEmpleado = null) {
+    const formulario = document.getElementById('form-movimiento-rrhh');
+    if (!formulario) return;
+
+    if (!empleadosRRHHGlobal.length) {
+        alert('Primero registra un empleado.');
+        return;
+    }
+
+    formulario.reset();
+    document.getElementById('rrhh-movimiento-fecha').value = fechaHoyLocalRRHH();
+
+    const empleado = idEmpleado === null
+        ? null
+        : empleadoRRHHPorId(idEmpleado);
+    if (empleado) {
+        document.getElementById('rrhh-movimiento-tipo').value = empleado.activo
+            ? 'Carta compromiso'
+            : 'Alta';
+    }
+
+    actualizarCamposMovimientoRRHH(idEmpleado);
+    formulario.classList.remove('oculto');
+    formulario.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function ocultarFormularioMovimientoRRHH() {
+    const formulario = document.getElementById('form-movimiento-rrhh');
+    if (!formulario) return;
+    formulario.reset();
+    formulario.classList.add('oculto');
+    document.getElementById('rrhh-movimiento-fecha-fin-grupo').classList.add('oculto');
+}
+
+function abrirMovimientoEmpleadoRRHH(idEmpleado) {
+    seleccionarArea('rrhh', 'rrhh-administrativo');
+    window.setTimeout(
+        () => mostrarFormularioMovimientoRRHH(idEmpleado),
+        0
+    );
+}
+
+async function guardarMovimientoRRHH(event) {
+    event.preventDefault();
+    const sesion = obtenerSesion();
+    const formulario = document.getElementById('form-movimiento-rrhh');
+    const boton = formulario.querySelector('button[type="submit"]');
+    const tipo = document.getElementById('rrhh-movimiento-tipo').value;
+
+    if (!sesion?.id_empresa || !sesion?.id_usuario) {
+        alert('La sesion no es valida. Inicia sesion nuevamente.');
+        return;
+    }
+
+    const payload = {
+        id_empresa: Number(sesion.id_empresa),
+        id_empleado: Number(document.getElementById('rrhh-movimiento-empleado').value),
+        id_usuario: Number(sesion.id_usuario),
+        tipo_movimiento: tipo,
+        fecha_movimiento: document.getElementById('rrhh-movimiento-fecha').value,
+        fecha_fin: (tipo === 'Suspension' || tipo === 'Permiso')
+            ? document.getElementById('rrhh-movimiento-fecha-fin').value || null
+            : null,
+        detalle: document.getElementById('rrhh-movimiento-detalle').value.trim()
+    };
+
+    if (
+        !payload.id_empleado
+        || !payload.fecha_movimiento
+        || !payload.detalle
+    ) {
+        alert('Completa los campos obligatorios.');
+        return;
+    }
+
+    if (payload.fecha_fin && payload.fecha_fin < payload.fecha_movimiento) {
+        alert('La fecha final no puede ser anterior a la inicial.');
+        return;
+    }
+
+    const confirmacion = tipo === 'Baja'
+        ? window.confirm('La baja marcara al empleado como inactivo. Continuar?')
+        : true;
+    if (!confirmacion) return;
+
+    boton.disabled = true;
+    boton.textContent = 'Guardando...';
+    try {
+        const respuesta = await fetch('/api/rrhh/administrativo', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const resultado = await respuesta.json();
+        if (!respuesta.ok || !resultado.exito) {
+            throw new Error(
+                mensajeErrorAPI(resultado, 'No se pudo guardar el movimiento.')
+            );
+        }
+
+        alert(resultado.mensaje || 'Movimiento guardado exitosamente.');
+        ocultarFormularioMovimientoRRHH();
+        await obtenerEmpleadosRRHH();
+        await obtenerMovimientosRRHH();
+    } catch (error) {
+        console.error('Error al guardar movimiento de RR. HH.:', error);
+        alert(error.message || 'No se pudo guardar el movimiento.');
+    } finally {
+        boton.disabled = false;
+        boton.textContent = 'Guardar movimiento';
     }
 }
 

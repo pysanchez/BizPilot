@@ -2095,3 +2095,208 @@ def obtener_comprobantes_pago(
             f"Error al consultar comprobantes de pago: {e}"
         )
         return None
+
+
+# --- RR. HH.: EMPLEADOS Y ADMINISTRATIVO ---
+def _registro_unico_respuesta(response):
+    registro = response.data
+    if isinstance(registro, list):
+        return registro[0] if registro else None
+    return registro
+
+
+def _error_rrhh(error, mensaje_predeterminado):
+    texto = str(error).lower()
+    print(f"Error en RR. HH.: {error}")
+
+    if "uq_empleados_empresa_rfc" in texto or (
+        "duplicate" in texto and "rfc" in texto
+    ):
+        mensaje = "El RFC ya esta registrado en esta empresa"
+    elif "uq_empleados_empresa_nss" in texto or (
+        "duplicate" in texto and "seguridad_social" in texto
+    ):
+        mensaje = "El numero de seguridad social ya esta registrado"
+    elif "empleados_rfc_valido" in texto:
+        mensaje = "El formato del RFC no es valido"
+    elif "empleados_nss_valido" in texto:
+        mensaje = "El numero de seguridad social debe tener 11 digitos"
+    elif "empleados_telefono" in texto:
+        mensaje = "Revisa los telefonos del empleado"
+    elif "usuario no valido" in texto:
+        mensaje = "El usuario no pertenece a esta empresa"
+    elif "empleado no encontrado" in texto:
+        mensaje = "Empleado no encontrado para esta empresa"
+    elif "ya esta dado de baja" in texto:
+        mensaje = "El empleado ya esta dado de baja"
+    elif "ya esta activo" in texto:
+        mensaje = "El empleado ya esta activo"
+    elif "fecha final" in texto or "movimientos_rrhh_fechas" in texto:
+        mensaje = "La fecha final no puede ser anterior a la inicial"
+    elif "tipo de movimiento" in texto:
+        mensaje = "El tipo de movimiento no es valido"
+    else:
+        mensaje = mensaje_predeterminado
+
+    return {"exito": False, "mensaje": mensaje}
+
+
+def obtener_empleados_rrhh(id_empresa):
+    try:
+        response = supabase.table("empleados_rrhh") \
+            .select("*") \
+            .eq("id_empresa", id_empresa) \
+            .order("activo", desc=True) \
+            .order("nombre_completo") \
+            .execute()
+
+        return {
+            "exito": True,
+            "mensaje": "Empleados consultados",
+            "data": response.data or []
+        }
+    except Exception as e:
+        print(f"Error al consultar empleados de RR. HH.: {e}")
+        return {
+            "exito": False,
+            "mensaje": "No se pudieron consultar los empleados",
+            "data": []
+        }
+
+
+def crear_empleado_rrhh(datos):
+    try:
+        parametros = {
+            "p_id_empresa": datos["id_empresa"],
+            "p_id_usuario": datos["id_usuario"],
+            "p_nombre_completo": datos["nombre_completo"],
+            "p_fecha_nacimiento": datos["fecha_nacimiento"],
+            "p_fecha_ingreso": datos["fecha_ingreso"],
+            "p_salario": datos["salario"],
+            "p_puesto": datos["puesto"],
+            "p_telefono": datos["telefono"],
+            "p_rfc": datos["rfc"],
+            "p_numero_seguridad_social": datos[
+                "numero_seguridad_social"
+            ],
+            "p_telefono_emergencia": datos[
+                "telefono_emergencia"
+            ]
+        }
+
+        response = supabase.rpc(
+            "bizpilot_crear_empleado_rrhh",
+            parametros
+        ).execute()
+
+        return {
+            "exito": True,
+            "mensaje": "Empleado registrado exitosamente",
+            "data": _registro_unico_respuesta(response)
+        }
+    except Exception as e:
+        return _error_rrhh(e, "No se pudo registrar el empleado")
+
+
+def actualizar_empleado_rrhh(id_empleado, datos):
+    try:
+        existe = supabase.table("empleados_rrhh") \
+            .select("id_empleado") \
+            .eq("id_empleado", id_empleado) \
+            .eq("id_empresa", datos["id_empresa"]) \
+            .limit(1) \
+            .execute()
+
+        if not existe.data:
+            return {
+                "exito": False,
+                "mensaje": "Empleado no encontrado para esta empresa"
+            }
+
+        cambios = {
+            "nombre_completo": datos["nombre_completo"].strip(),
+            "fecha_nacimiento": datos["fecha_nacimiento"],
+            "fecha_ingreso": datos["fecha_ingreso"],
+            "salario": round(float(datos["salario"]), 2),
+            "puesto": datos["puesto"].strip(),
+            "telefono": datos["telefono"].strip(),
+            "rfc": datos["rfc"].strip().upper(),
+            "numero_seguridad_social": datos[
+                "numero_seguridad_social"
+            ].strip(),
+            "telefono_emergencia": datos[
+                "telefono_emergencia"
+            ].strip()
+        }
+
+        response = supabase.table("empleados_rrhh") \
+            .update(cambios) \
+            .eq("id_empleado", id_empleado) \
+            .eq("id_empresa", datos["id_empresa"]) \
+            .execute()
+
+        registro = response.data[0] if response.data else None
+        return {
+            "exito": True,
+            "mensaje": "Empleado actualizado exitosamente",
+            "data": registro
+        }
+    except Exception as e:
+        return _error_rrhh(e, "No se pudo actualizar el empleado")
+
+
+def obtener_movimientos_administrativos_rrhh(id_empresa):
+    try:
+        response = supabase.table(
+            "movimientos_administrativos_rrhh"
+        ).select(
+            "*, empleados_rrhh(nombre_completo,puesto,activo)"
+        ).eq(
+            "id_empresa", id_empresa
+        ).order(
+            "fecha_movimiento", desc=True
+        ).order(
+            "id_movimiento", desc=True
+        ).execute()
+
+        return {
+            "exito": True,
+            "mensaje": "Movimientos administrativos consultados",
+            "data": response.data or []
+        }
+    except Exception as e:
+        print(f"Error al consultar movimientos de RR. HH.: {e}")
+        return {
+            "exito": False,
+            "mensaje": "No se pudieron consultar los movimientos",
+            "data": []
+        }
+
+
+def crear_movimiento_administrativo_rrhh(datos):
+    try:
+        parametros = {
+            "p_id_empresa": datos["id_empresa"],
+            "p_id_empleado": datos["id_empleado"],
+            "p_id_usuario": datos["id_usuario"],
+            "p_tipo_movimiento": datos["tipo_movimiento"],
+            "p_fecha_movimiento": datos["fecha_movimiento"],
+            "p_fecha_fin": datos.get("fecha_fin"),
+            "p_detalle": datos["detalle"]
+        }
+
+        response = supabase.rpc(
+            "bizpilot_registrar_movimiento_rrhh",
+            parametros
+        ).execute()
+
+        return {
+            "exito": True,
+            "mensaje": "Movimiento administrativo registrado",
+            "data": _registro_unico_respuesta(response)
+        }
+    except Exception as e:
+        return _error_rrhh(
+            e,
+            "No se pudo registrar el movimiento administrativo"
+        )

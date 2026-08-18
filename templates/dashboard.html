@@ -6,6 +6,7 @@
     <title>BizPilot | Dashboard</title>
     <link rel="stylesheet" href="/static/dashboard_style.css?v=dashboard-financiero-20260811-1">
     <link rel="stylesheet" href="/static/crm_embudo.css?v=crm-completo-20260818-1">
+    <link rel="stylesheet" href="/static/rrhh.css?v=rrhh-20260818-1">
 </head>
 <body>
     <header class="app-header">
@@ -2641,58 +2642,221 @@
 
         <div id="vista-rrhh-empleados" class="module-container oculto">
             <div class="modulo-header">
-                <h2>Empleados</h2>
+                <div>
+                    <p class="eyebrow">RR. HH.</p>
+                    <h2>Empleados</h2>
+                </div>
+                <button type="button" class="btn-primary" onclick="mostrarFormularioEmpleadoRRHH()">
+                    + Nuevo empleado
+                </button>
             </div>
-            <p>Expediente laboral y datos del personal en construcción...</p>
+
+            <div class="rrhh-summary-grid">
+                <article class="rrhh-summary-card">
+                    <span>Total</span>
+                    <strong id="rrhh-empleados-total">0</strong>
+                </article>
+                <article class="rrhh-summary-card rrhh-summary-active">
+                    <span>Activos</span>
+                    <strong id="rrhh-empleados-activos">0</strong>
+                </article>
+                <article class="rrhh-summary-card rrhh-summary-inactive">
+                    <span>Bajas</span>
+                    <strong id="rrhh-empleados-bajas">0</strong>
+                </article>
+            </div>
+
+            <div class="client-filter-bar rrhh-filter-bar">
+                <input
+                    type="search"
+                    id="rrhh-empleados-busqueda"
+                    placeholder="Buscar por nombre, puesto, RFC o telefono"
+                    oninput="filtrarEmpleadosRRHH()"
+                >
+                <select id="rrhh-empleados-estado" onchange="filtrarEmpleadosRRHH()">
+                    <option value="todos">Todos los estados</option>
+                    <option value="activos">Activos</option>
+                    <option value="bajas">Bajas</option>
+                </select>
+                <button type="button" class="btn-secondary" onclick="obtenerEmpleadosRRHH()">
+                    Actualizar
+                </button>
+            </div>
+
+            <p id="rrhh-empleados-estado-carga" class="financial-dashboard-status" role="status" aria-live="polite"></p>
+            <p id="rrhh-empleados-resumen" class="table-summary" aria-live="polite"></p>
+
+            <div class="tabla-container">
+                <table class="tabla-custom">
+                    <thead>
+                        <tr>
+                            <th>Empleado</th>
+                            <th>Puesto</th>
+                            <th>Edad</th>
+                            <th>Ingreso</th>
+                            <th>Telefono</th>
+                            <th>Salario</th>
+                            <th>Estado</th>
+                            <th>Accion</th>
+                        </tr>
+                    </thead>
+                    <tbody id="rrhh-empleados-body"></tbody>
+                </table>
+            </div>
+
+            <form id="form-empleado-rrhh" class="card-form rrhh-form oculto" onsubmit="guardarEmpleadoRRHH(event)">
+                <div class="modulo-header">
+                    <div>
+                        <p class="eyebrow">Expediente laboral</p>
+                        <h3 id="rrhh-empleado-form-titulo">Nuevo empleado</h3>
+                    </div>
+                    <button type="button" class="btn-secondary" onclick="ocultarFormularioEmpleadoRRHH()">
+                        Cerrar
+                    </button>
+                </div>
+
+                <input type="hidden" id="rrhh-empleado-id">
+
+                <div class="rrhh-form-grid">
+                    <label class="rrhh-field rrhh-field-wide">
+                        <span>Nombre completo</span>
+                        <input type="text" id="rrhh-empleado-nombre" maxlength="180" required>
+                    </label>
+                    <label class="rrhh-field">
+                        <span>Fecha de nacimiento</span>
+                        <input type="date" id="rrhh-empleado-nacimiento" required>
+                    </label>
+                    <label class="rrhh-field">
+                        <span>Fecha de ingreso</span>
+                        <input type="date" id="rrhh-empleado-ingreso" required>
+                    </label>
+                    <label class="rrhh-field">
+                        <span>Puesto</span>
+                        <input type="text" id="rrhh-empleado-puesto" maxlength="120" required>
+                    </label>
+                    <label class="rrhh-field">
+                        <span>Salario mensual</span>
+                        <input type="number" id="rrhh-empleado-salario" min="0" step="0.01" required>
+                    </label>
+                    <label class="rrhh-field">
+                        <span>Telefono</span>
+                        <input type="tel" id="rrhh-empleado-telefono" maxlength="20" required>
+                    </label>
+                    <label class="rrhh-field">
+                        <span>Telefono de emergencia</span>
+                        <input type="tel" id="rrhh-empleado-emergencia" maxlength="20" required>
+                    </label>
+                    <label class="rrhh-field">
+                        <span>RFC</span>
+                        <input type="text" id="rrhh-empleado-rfc" minlength="12" maxlength="13" required>
+                    </label>
+                    <label class="rrhh-field">
+                        <span>Numero de seguridad social</span>
+                        <input type="text" id="rrhh-empleado-nss" inputmode="numeric" minlength="11" maxlength="11" required>
+                    </label>
+                </div>
+
+                <div class="form-actions">
+                    <button type="button" class="btn-secondary" onclick="ocultarFormularioEmpleadoRRHH()">Cancelar</button>
+                    <button type="submit" class="btn-primary">Guardar empleado</button>
+                </div>
+            </form>
         </div>
 
-        <div id="vista-rrhh-asistencias" class="module-container oculto">
+        <div id="vista-rrhh-administrativo" class="module-container oculto">
             <div class="modulo-header">
-                <h2>Asistencias</h2>
+                <div>
+                    <p class="eyebrow">RR. HH.</p>
+                    <h2>Administrativo</h2>
+                </div>
+                <button type="button" class="btn-primary" onclick="mostrarFormularioMovimientoRRHH()">
+                    + Nuevo movimiento
+                </button>
             </div>
-            <p>Entradas, salidas, faltas, retardos y horas extra en construcción...</p>
-        </div>
 
-        <div id="vista-rrhh-vacaciones" class="module-container oculto">
-            <div class="modulo-header">
-                <h2>Vacaciones y Permisos</h2>
+            <div class="client-filter-bar rrhh-filter-bar">
+                <input
+                    type="search"
+                    id="rrhh-admin-busqueda"
+                    placeholder="Buscar empleado o detalle"
+                    oninput="filtrarMovimientosRRHH()"
+                >
+                <select id="rrhh-admin-tipo" onchange="filtrarMovimientosRRHH()">
+                    <option value="todos">Todos los movimientos</option>
+                    <option value="Carta compromiso">Carta compromiso</option>
+                    <option value="Suspension">Suspension</option>
+                    <option value="Baja">Baja</option>
+                    <option value="Alta">Alta</option>
+                    <option value="Permiso">Permiso</option>
+                </select>
+                <button type="button" class="btn-secondary" onclick="obtenerMovimientosRRHH()">
+                    Actualizar
+                </button>
             </div>
-            <p>Solicitudes, autorizaciones y saldos disponibles en construcción...</p>
-        </div>
 
-        <div id="vista-rrhh-incidencias" class="module-container oculto">
-            <div class="modulo-header">
-                <h2>Incidencias</h2>
-            </div>
-            <p>Faltas, incapacidades y salidas anticipadas en construcción...</p>
-        </div>
+            <p id="rrhh-admin-estado-carga" class="financial-dashboard-status" role="status" aria-live="polite"></p>
+            <p id="rrhh-admin-resumen" class="table-summary" aria-live="polite"></p>
 
-        <div id="vista-rrhh-accidentes" class="module-container oculto">
-            <div class="modulo-header">
-                <h2>Accidentes Laborales</h2>
+            <div class="tabla-container">
+                <table class="tabla-custom">
+                    <thead>
+                        <tr>
+                            <th>Fecha</th>
+                            <th>Empleado</th>
+                            <th>Movimiento</th>
+                            <th>Periodo</th>
+                            <th>Detalle</th>
+                        </tr>
+                    </thead>
+                    <tbody id="rrhh-admin-body"></tbody>
+                </table>
             </div>
-            <p>Registro, investigación y seguimiento de accidentes en construcción...</p>
-        </div>
 
-        <div id="vista-rrhh-avisos" class="module-container oculto">
-            <div class="modulo-header">
-                <h2>Avisos Internos</h2>
-            </div>
-            <p>Comunicados, destinatarios y confirmaciones de lectura en construcción...</p>
-        </div>
+            <form id="form-movimiento-rrhh" class="card-form rrhh-form oculto" onsubmit="guardarMovimientoRRHH(event)">
+                <div class="modulo-header">
+                    <div>
+                        <p class="eyebrow">Historial laboral</p>
+                        <h3>Nuevo movimiento administrativo</h3>
+                    </div>
+                    <button type="button" class="btn-secondary" onclick="ocultarFormularioMovimientoRRHH()">
+                        Cerrar
+                    </button>
+                </div>
 
-        <div id="vista-rrhh-medidas" class="module-container oculto">
-            <div class="modulo-header">
-                <h2>Medidas Disciplinarias</h2>
-            </div>
-            <p>Registro controlado de llamadas de atención y seguimientos en construcción...</p>
-        </div>
+                <div class="rrhh-form-grid">
+                    <label class="rrhh-field rrhh-field-wide">
+                        <span>Empleado</span>
+                        <select id="rrhh-movimiento-empleado" required></select>
+                    </label>
+                    <label class="rrhh-field">
+                        <span>Tipo</span>
+                        <select id="rrhh-movimiento-tipo" onchange="actualizarCamposMovimientoRRHH()" required>
+                            <option value="Carta compromiso">Carta compromiso</option>
+                            <option value="Suspension">Suspension</option>
+                            <option value="Baja">Baja</option>
+                            <option value="Alta">Alta</option>
+                            <option value="Permiso">Permiso</option>
+                        </select>
+                    </label>
+                    <label class="rrhh-field">
+                        <span>Fecha</span>
+                        <input type="date" id="rrhh-movimiento-fecha" required>
+                    </label>
+                    <label id="rrhh-movimiento-fecha-fin-grupo" class="rrhh-field oculto">
+                        <span>Fecha final opcional</span>
+                        <input type="date" id="rrhh-movimiento-fecha-fin">
+                    </label>
+                    <label class="rrhh-field rrhh-field-full">
+                        <span>Detalle</span>
+                        <textarea id="rrhh-movimiento-detalle" rows="4" maxlength="1000" required></textarea>
+                    </label>
+                </div>
 
-        <div id="vista-rrhh-documentos" class="module-container oculto">
-            <div class="modulo-header">
-                <h2>Documentos del Empleado</h2>
-            </div>
-            <p>Expedientes, permisos de acceso y vigencias documentales en construcción...</p>
+                <div class="form-actions">
+                    <button type="button" class="btn-secondary" onclick="ocultarFormularioMovimientoRRHH()">Cancelar</button>
+                    <button type="submit" class="btn-primary">Guardar movimiento</button>
+                </div>
+            </form>
         </div>
 
         <div id="vista-ia-copilot" class="module-container oculto">
@@ -2704,6 +2868,6 @@
 
     </main>
 
-    <script src="/static/dashboard.js?v=crm-completo-20260818-1"></script>
+    <script src="/static/dashboard.js?v=rrhh-20260818-1"></script>
 </body>
 </html>

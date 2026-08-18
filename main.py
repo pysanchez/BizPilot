@@ -931,3 +931,148 @@ def anular_gasto_manual(id_gasto: int, datos: AnularGastoSchema):
         id_gasto=id_gasto,
         id_empresa=datos.id_empresa
     )
+
+
+# --- RR. HH.: EMPLEADOS Y ADMINISTRATIVO ---
+class EmpleadoRRHHSchema(BaseModel):
+    id_empresa: int = Field(gt=0)
+    id_usuario: int = Field(gt=0)
+    nombre_completo: str = Field(min_length=3, max_length=180)
+    fecha_nacimiento: date
+    fecha_ingreso: date
+    salario: float = Field(ge=0)
+    puesto: str = Field(min_length=2, max_length=120)
+    telefono: str = Field(min_length=7, max_length=20)
+    rfc: str = Field(min_length=12, max_length=13)
+    numero_seguridad_social: str = Field(min_length=11, max_length=11)
+    telefono_emergencia: str = Field(min_length=7, max_length=20)
+
+    @field_validator(
+        "nombre_completo",
+        "puesto",
+        "telefono",
+        "rfc",
+        "numero_seguridad_social",
+        "telefono_emergencia",
+        mode="before"
+    )
+    @classmethod
+    def limpiar_campos_empleado(cls, valor):
+        if valor is None:
+            return valor
+        return str(valor).strip()
+
+    @field_validator("rfc")
+    @classmethod
+    def validar_rfc(cls, valor):
+        valor = valor.upper()
+        if not re.fullmatch(
+            r"[A-Z&Ñ]{3,4}[0-9]{6}[A-Z0-9]{3}",
+            valor
+        ):
+            raise ValueError("El RFC no tiene un formato valido")
+        return valor
+
+    @field_validator("numero_seguridad_social")
+    @classmethod
+    def validar_nss(cls, valor):
+        if not re.fullmatch(r"[0-9]{11}", valor):
+            raise ValueError(
+                "El numero de seguridad social debe tener 11 digitos"
+            )
+        return valor
+
+    @field_validator("telefono", "telefono_emergencia")
+    @classmethod
+    def validar_telefono_empleado(cls, valor):
+        digitos = re.sub(r"[^0-9]", "", valor)
+        if not 7 <= len(digitos) <= 15:
+            raise ValueError("El telefono debe contener de 7 a 15 digitos")
+        return valor
+
+    @model_validator(mode="after")
+    def validar_fechas_empleado(self):
+        if self.fecha_nacimiento > date.today():
+            raise ValueError("La fecha de nacimiento no puede ser futura")
+        if self.fecha_ingreso < self.fecha_nacimiento:
+            raise ValueError("La fecha de ingreso no es valida")
+        return self
+
+
+class MovimientoAdministrativoRRHHSchema(BaseModel):
+    id_empresa: int = Field(gt=0)
+    id_empleado: int = Field(gt=0)
+    id_usuario: int = Field(gt=0)
+    tipo_movimiento: Literal[
+        "Carta compromiso",
+        "Suspension",
+        "Baja",
+        "Alta",
+        "Permiso"
+    ]
+    fecha_movimiento: date
+    fecha_fin: Optional[date] = None
+    detalle: str = Field(min_length=3, max_length=1000)
+
+    @field_validator("detalle", mode="before")
+    @classmethod
+    def limpiar_detalle_movimiento(cls, valor):
+        return str(valor or "").strip()
+
+    @model_validator(mode="after")
+    def validar_fechas_movimiento(self):
+        if self.tipo_movimiento not in {"Suspension", "Permiso"}:
+            self.fecha_fin = None
+        if (
+            self.fecha_fin is not None
+            and self.fecha_fin < self.fecha_movimiento
+        ):
+            raise ValueError(
+                "La fecha final no puede ser anterior a la inicial"
+            )
+        return self
+
+
+@app.get("/api/rrhh/empleados/{id_empresa}")
+def listar_empleados_rrhh(id_empresa: int):
+    return database.obtener_empleados_rrhh(id_empresa)
+
+
+@app.post("/api/rrhh/empleados")
+def guardar_empleado_rrhh(empleado: EmpleadoRRHHSchema):
+    datos = empleado.model_dump()
+    datos["fecha_nacimiento"] = empleado.fecha_nacimiento.isoformat()
+    datos["fecha_ingreso"] = empleado.fecha_ingreso.isoformat()
+    return database.crear_empleado_rrhh(datos)
+
+
+@app.put("/api/rrhh/empleados/{id_empleado}")
+def editar_empleado_rrhh(
+    id_empleado: int,
+    empleado: EmpleadoRRHHSchema
+):
+    datos = empleado.model_dump()
+    datos["fecha_nacimiento"] = empleado.fecha_nacimiento.isoformat()
+    datos["fecha_ingreso"] = empleado.fecha_ingreso.isoformat()
+    return database.actualizar_empleado_rrhh(id_empleado, datos)
+
+
+@app.get("/api/rrhh/administrativo/{id_empresa}")
+def listar_movimientos_administrativos_rrhh(id_empresa: int):
+    return database.obtener_movimientos_administrativos_rrhh(id_empresa)
+
+
+@app.post("/api/rrhh/administrativo")
+def guardar_movimiento_administrativo_rrhh(
+    movimiento: MovimientoAdministrativoRRHHSchema
+):
+    datos = movimiento.model_dump()
+    datos["fecha_movimiento"] = (
+        movimiento.fecha_movimiento.isoformat()
+    )
+    datos["fecha_fin"] = (
+        movimiento.fecha_fin.isoformat()
+        if movimiento.fecha_fin
+        else None
+    )
+    return database.crear_movimiento_administrativo_rrhh(datos)

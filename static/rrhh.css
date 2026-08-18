@@ -1,0 +1,167 @@
+.rrhh-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(150px, 1fr));
+    gap: 16px;
+    margin: 18px 0;
+}
+
+.rrhh-summary-card {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 18px;
+    border: 1px solid #e5e7eb;
+    border-radius: 14px;
+    background: #ffffff;
+    box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+}
+
+.rrhh-summary-card span {
+    color: #64748b;
+    font-size: 0.86rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.rrhh-summary-card strong {
+    color: #0f172a;
+    font-size: 1.8rem;
+    line-height: 1;
+}
+
+.rrhh-summary-active {
+    border-left: 4px solid #16a34a;
+}
+
+.rrhh-summary-inactive {
+    border-left: 4px solid #dc2626;
+}
+
+.rrhh-filter-bar {
+    display: grid;
+    grid-template-columns: minmax(240px, 1fr) minmax(190px, 240px) auto;
+    gap: 12px;
+    align-items: center;
+    margin: 16px 0;
+}
+
+.rrhh-filter-bar input,
+.rrhh-filter-bar select,
+.rrhh-field input,
+.rrhh-field select,
+.rrhh-field textarea {
+    width: 100%;
+    min-height: 42px;
+    padding: 10px 12px;
+    border: 1px solid #cbd5e1;
+    border-radius: 9px;
+    background: #ffffff;
+    color: #0f172a;
+    font: inherit;
+}
+
+.rrhh-field textarea {
+    resize: vertical;
+}
+
+.rrhh-filter-bar input:focus,
+.rrhh-filter-bar select:focus,
+.rrhh-field input:focus,
+.rrhh-field select:focus,
+.rrhh-field textarea:focus {
+    outline: none;
+    border-color: #16a34a;
+    box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.14);
+}
+
+.rrhh-form {
+    margin-top: 22px;
+}
+
+.rrhh-form-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+}
+
+.rrhh-field {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    color: #334155;
+    font-size: 0.9rem;
+    font-weight: 700;
+}
+
+.rrhh-field-wide,
+.rrhh-field-full {
+    grid-column: 1 / -1;
+}
+
+.rrhh-sensitive {
+    color: #64748b;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.86rem;
+}
+
+.rrhh-status-active,
+.rrhh-status-inactive,
+.rrhh-movement-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 9px;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+.rrhh-status-active {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.rrhh-status-inactive {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.rrhh-movement-badge {
+    background: #e2e8f0;
+    color: #334155;
+}
+
+.rrhh-movement-alta {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.rrhh-movement-baja,
+.rrhh-movement-suspension {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.rrhh-movement-permiso {
+    background: #dbeafe;
+    color: #1d4ed8;
+}
+
+.rrhh-movement-carta {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+@media (max-width: 800px) {
+    .rrhh-summary-grid,
+    .rrhh-form-grid,
+    .rrhh-filter-bar {
+        grid-template-columns: 1fr;
+    }
+
+    .rrhh-field-wide,
+    .rrhh-field-full {
+        grid-column: auto;
+    }
+}
