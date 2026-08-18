@@ -4,7 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BizPilot | Dashboard</title>
-    <link rel="stylesheet" href="/static/dashboard_style.css?v=altas-rapidas-20260811-1">
+    <link rel="stylesheet" href="/static/dashboard_style.css?v=dashboard-financiero-20260811-1">
+    <link rel="stylesheet" href="/static/crm_embudo.css?v=crm-completo-20260818-1">
 </head>
 <body>
     <header class="app-header">
@@ -15,8 +16,8 @@
             </div>
 
             <div class="session-controls">
-                <h1>Panel de Control | Empresa ID: <span id="empresa-id">Cargando...</span></h1>
-                <button type="button" class="btn-logout" onclick="cerrarSesion()">Cerrar Sesión</button>
+                <h1>Panel de Control | <span id="empresa-nombre">Cargando empresa...</span></h1>
+                <button type="button" class="btn-logout" onclick="cerrarSesion()">Cerrar sesion</button>
             </div>
         </div>
 
@@ -412,10 +413,70 @@
         </div>
 
         <div id="vista-fin-resumen" class="module-container oculto">
-            <div class="modulo-header">
-                <h2>Dashboard Financiero</h2>
+            <div class="modulo-header financial-dashboard-header">
+                <div>
+                    <p class="eyebrow">Resultado operativo</p>
+                    <h2>Dashboard Financiero</h2>
+                    <p id="fin-dashboard-periodo" class="financial-dashboard-period">Mes actual</p>
+                </div>
+                <button type="button" id="btn-actualizar-dashboard-financiero" class="btn-secondary" onclick="obtenerDashboardFinanciero()">
+                    Actualizar
+                </button>
             </div>
-            <p>Dashboard financiero en construcción...</p>
+
+            <p class="financial-dashboard-note">
+                Los ingresos corresponden al total vendido en la fecha de cada venta. Los cobros de CxC no se suman otra vez.
+            </p>
+
+            <div class="financial-kpi-grid" aria-label="Resumen financiero del mes actual">
+                <article class="financial-kpi-card income">
+                    <span>Ingresos por ventas</span>
+                    <strong id="fin-dashboard-ingresos">$0.00</strong>
+                    <small>Ventas registradas este mes</small>
+                </article>
+                <article class="financial-kpi-card expense">
+                    <span>Gastos</span>
+                    <strong id="fin-dashboard-gastos">$0.00</strong>
+                    <small>Salidas registradas este mes</small>
+                </article>
+                <article id="fin-dashboard-utilidad-card" class="financial-kpi-card net">
+                    <span>Ganancia neta estimada</span>
+                    <strong id="fin-dashboard-utilidad">$0.00</strong>
+                    <small>Ingresos menos gastos registrados</small>
+                </article>
+            </div>
+
+            <div class="financial-chart-legend" aria-label="Series de las gráficas">
+                <span><i class="legend-income"></i>Ingresos</span>
+                <span><i class="legend-expense"></i>Gastos</span>
+                <span><i class="legend-net"></i>Resultado neto</span>
+            </div>
+
+            <section class="financial-chart-card" aria-labelledby="fin-dashboard-diario-titulo">
+                <div class="financial-chart-heading">
+                    <div>
+                        <h3 id="fin-dashboard-diario-titulo">Historial diario</h3>
+                        <p>Últimos 30 días, incluido hoy</p>
+                    </div>
+                </div>
+                <div id="fin-dashboard-grafica-diaria" class="financial-chart-scroll" aria-live="polite">
+                    <p class="financial-chart-empty">Cargando movimientos diarios...</p>
+                </div>
+            </section>
+
+            <section class="financial-chart-card" aria-labelledby="fin-dashboard-mensual-titulo">
+                <div class="financial-chart-heading">
+                    <div>
+                        <h3 id="fin-dashboard-mensual-titulo">Historial mensual</h3>
+                        <p>Últimos 12 meses, incluido el actual</p>
+                    </div>
+                </div>
+                <div id="fin-dashboard-grafica-mensual" class="financial-chart-scroll" aria-live="polite">
+                    <p class="financial-chart-empty">Cargando movimientos mensuales...</p>
+                </div>
+            </section>
+
+            <p id="fin-dashboard-estado" class="financial-dashboard-status" role="status" aria-live="polite"></p>
         </div>
 
         <div id="vista-fin-gastos" class="module-container oculto">
@@ -583,11 +644,304 @@
         </div>
 
         <div id="vista-fin-ingresos" class="module-container oculto">
-            <div class="modulo-header">
-                <h2>Ingresos y Cobros</h2>
-            </div>
-            <p>Control de ingresos, cobros y movimientos de caja en construcción...</p>
+    <div class="modulo-header financial-dashboard-header">
+        <div>
+            <p class="eyebrow">Ventas, clientes y productos</p>
+            <h2>Análisis de ingresos</h2>
+            <p class="financial-dashboard-period">
+                Consulta cuánto se vendió, cuánto se cobró y qué saldo continúa pendiente.
+            </p>
         </div>
+
+        <button
+            type="button"
+            id="btn-actualizar-analisis-ingresos"
+            class="btn-secondary"
+        >
+            Actualizar
+        </button>
+    </div>
+
+    <p class="financial-dashboard-note">
+        El total vendido se calcula con las ventas del periodo seleccionado.
+        Los abonos de Cuentas por cobrar se incluyen dentro de lo cobrado,
+        pero no se suman como ventas nuevas.
+    </p>
+
+    <!-- FILTROS -->
+    <div class="client-filters" aria-label="Filtros del análisis de ingresos">
+        <div class="input-group">
+            <label for="ingresos-fecha-inicio">Desde</label>
+            <input type="date" id="ingresos-fecha-inicio">
+        </div>
+
+        <div class="input-group">
+            <label for="ingresos-fecha-fin">Hasta</label>
+            <input type="date" id="ingresos-fecha-fin">
+        </div>
+
+        <div class="input-group client-search">
+            <label for="ingresos-busqueda">Buscar cliente o producto</label>
+            <input
+                type="search"
+                id="ingresos-busqueda"
+                placeholder="Nombre del cliente, producto o folio"
+            >
+        </div>
+
+        <button
+            type="button"
+            id="btn-restablecer-filtros-ingresos"
+            class="btn-secondary client-refresh"
+        >
+            Este mes
+        </button>
+    </div>
+
+    <!-- RESUMEN GENERAL -->
+    <div class="finance-summary-grid" aria-label="Resumen de ingresos">
+        <article class="finance-summary-card success">
+            <span>Total vendido</span>
+            <strong id="ingresos-total-vendido">$0.00</strong>
+        </article>
+
+        <article class="finance-summary-card success">
+            <span>Total cobrado</span>
+            <strong id="ingresos-total-cobrado">$0.00</strong>
+        </article>
+
+        <article class="finance-summary-card danger">
+            <span>Saldo pendiente</span>
+            <strong id="ingresos-total-pendiente">$0.00</strong>
+        </article>
+
+        <article class="finance-summary-card">
+            <span>Ticket promedio</span>
+            <strong id="ingresos-ticket-promedio">$0.00</strong>
+        </article>
+    </div>
+
+    <p
+        id="ingresos-estado"
+        class="financial-dashboard-status"
+        role="status"
+        aria-live="polite"
+    ></p>
+
+    <!-- RESUMEN POR CLIENTE -->
+    <section
+        class="financial-chart-card"
+        aria-labelledby="ingresos-clientes-titulo"
+    >
+        <div class="financial-chart-heading">
+            <h3 id="ingresos-clientes-titulo">
+                Compras por cliente
+            </h3>
+
+            <p>
+                Incluye clientes registrados y Público general.
+                Selecciona un registro para ver sus compras agrupadas por día.
+            </p>
+        </div>
+
+        <p
+            id="ingresos-clientes-resumen"
+            class="table-summary"
+            aria-live="polite"
+        ></p>
+
+        <div class="tabla-container">
+            <table class="tabla-custom">
+                <thead>
+                    <tr>
+                        <th>Cliente</th>
+                        <th>Compras</th>
+                        <th>Total comprado</th>
+                        <th>Total cobrado</th>
+                        <th>Pendiente</th>
+                        <th>Última compra</th>
+                        <th>Desglose</th>
+                    </tr>
+                </thead>
+
+                <tbody id="tabla-ingresos-clientes-body">
+                    <tr>
+                        <td colspan="7" style="text-align: center; color: #6b7280;">
+                            Esperando información del análisis...
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <!-- DETALLE DEL CLIENTE -->
+    <section
+        id="ingresos-detalle-cliente"
+        class="card-form oculto"
+        aria-labelledby="ingresos-detalle-cliente-nombre"
+    >
+        <div class="cxc-detail-header">
+            <div>
+                <p id="ingresos-detalle-cliente-tipo" class="eyebrow">
+                    Cliente
+                </p>
+
+                <h3 id="ingresos-detalle-cliente-nombre">
+                    Detalle de compras
+                </h3>
+            </div>
+
+            <button
+                type="button"
+                id="btn-cerrar-detalle-ingresos"
+                class="btn-secondary"
+            >
+                Cerrar
+            </button>
+        </div>
+
+        <div class="cxc-account-summary">
+            <div>
+                <span>Días con compras</span>
+                <strong id="ingresos-detalle-dias">0</strong>
+            </div>
+
+            <div>
+                <span>Total comprado</span>
+                <strong id="ingresos-detalle-total">$0.00</strong>
+            </div>
+
+            <div>
+                <span>Total cobrado</span>
+                <strong
+                    id="ingresos-detalle-cobrado"
+                    class="amount-positive"
+                >
+                    $0.00
+                </strong>
+            </div>
+
+            <div>
+                <span>Pendiente</span>
+                <strong
+                    id="ingresos-detalle-pendiente"
+                    class="amount-negative"
+                >
+                    $0.00
+                </strong>
+            </div>
+        </div>
+
+        <div class="tabla-container">
+            <table class="tabla-custom">
+                <thead>
+                    <tr>
+                        <th>Fecha</th>
+                        <th>Ventas</th>
+                        <th>Productos comprados</th>
+                        <th>Total del día</th>
+                        <th>Cobrado</th>
+                        <th>Pendiente</th>
+                    </tr>
+                </thead>
+
+                <tbody id="tabla-ingresos-detalle-cliente-body"></tbody>
+            </table>
+        </div>
+    </section>
+
+    <!-- PRODUCTOS VENDIDOS -->
+    <section
+        class="financial-chart-card"
+        aria-labelledby="ingresos-productos-titulo"
+    >
+        <div class="financial-chart-heading">
+            <h3 id="ingresos-productos-titulo">
+                Productos vendidos
+            </h3>
+
+            <p>
+                Productos de inventario y artículos capturados mediante Venta rápida.
+            </p>
+        </div>
+
+        <p
+            id="ingresos-productos-resumen"
+            class="table-summary"
+            aria-live="polite"
+        ></p>
+
+        <div class="tabla-container">
+            <table class="tabla-custom">
+                <thead>
+                    <tr>
+                        <th>Producto</th>
+                        <th>SKU / tipo</th>
+                        <th>Unidades</th>
+                        <th>Ventas</th>
+                        <th>Precio promedio</th>
+                        <th>Total vendido</th>
+                        <th>Participación</th>
+                    </tr>
+                </thead>
+
+                <tbody id="tabla-ingresos-productos-body">
+                    <tr>
+                        <td colspan="7" style="text-align: center; color: #6b7280;">
+                            Esperando información de productos...
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <!-- HISTORIAL DIARIO -->
+    <section
+        class="financial-chart-card"
+        aria-labelledby="ingresos-diario-titulo"
+    >
+        <div class="financial-chart-heading">
+            <h3 id="ingresos-diario-titulo">
+                Resumen diario
+            </h3>
+
+            <p>
+                Consolidado de ventas, clientes, cobros y saldos por fecha de venta.
+            </p>
+        </div>
+
+        <p
+            id="ingresos-diario-resumen"
+            class="table-summary"
+            aria-live="polite"
+        ></p>
+
+        <div class="tabla-container">
+            <table class="tabla-custom">
+                <thead>
+                    <tr>
+                        <th>Fecha</th>
+                        <th>Ventas</th>
+                        <th>Clientes</th>
+                        <th>Total vendido</th>
+                        <th>Total cobrado</th>
+                        <th>Pendiente</th>
+                    </tr>
+                </thead>
+
+                <tbody id="tabla-ingresos-diario-body">
+                    <tr>
+                        <td colspan="6" style="text-align: center; color: #6b7280;">
+                            Esperando información diaria...
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
 
         <div id="vista-fin-cxp" class="module-container oculto">
             <div class="modulo-header">
@@ -656,11 +1010,368 @@
         </div>
 
         <div id="vista-fin-comprobantes" class="module-container oculto">
-            <div class="modulo-header">
-                <h2>Facturas y Comprobantes</h2>
-            </div>
-            <p>Control documental en construcción. La facturación fiscal requerirá una integración autorizada.</p>
+    <div class="modulo-header financial-dashboard-header">
+        <div>
+            <p class="eyebrow">Documentos internos</p>
+
+            <h2>Comprobantes</h2>
+
+            <p class="financial-dashboard-period">
+                Consulta y descarga comprobantes informativos de los
+                pagos registrados en BizPilot.
+            </p>
         </div>
+
+        <button
+            type="button"
+            id="btn-actualizar-comprobantes"
+            class="btn-secondary"
+        >
+            Actualizar
+        </button>
+    </div>
+
+    <p class="financial-dashboard-note">
+        Estos documentos son comprobantes internos de pago.
+        No tienen validez fiscal y no sustituyen un CFDI.
+    </p>
+
+    <!-- FILTROS -->
+    <div
+        class="client-filters"
+        aria-label="Filtros de comprobantes"
+    >
+        <div class="input-group">
+            <label for="comprobantes-fecha-inicio">
+                Desde
+            </label>
+
+            <input
+                type="date"
+                id="comprobantes-fecha-inicio"
+            >
+        </div>
+
+        <div class="input-group">
+            <label for="comprobantes-fecha-fin">
+                Hasta
+            </label>
+
+            <input
+                type="date"
+                id="comprobantes-fecha-fin"
+            >
+        </div>
+
+        <div class="input-group client-search">
+            <label for="comprobantes-busqueda">
+                Buscar comprobante
+            </label>
+
+            <input
+                type="search"
+                id="comprobantes-busqueda"
+                placeholder="Cliente, folio, producto o referencia"
+            >
+        </div>
+
+        <button
+            type="button"
+            id="btn-restablecer-comprobantes"
+            class="btn-secondary client-refresh"
+        >
+            Este mes
+        </button>
+    </div>
+
+    <!-- RESUMEN -->
+    <div
+        class="finance-summary-grid"
+        aria-label="Resumen de comprobantes"
+    >
+        <article class="finance-summary-card">
+            <span>Total de comprobantes</span>
+
+            <strong id="comprobantes-total-registros">
+                0
+            </strong>
+        </article>
+
+        <article class="finance-summary-card success">
+            <span>Importe comprobado</span>
+
+            <strong id="comprobantes-importe-total">
+                $0.00
+            </strong>
+        </article>
+
+        <article class="finance-summary-card">
+            <span>Ventas de contado</span>
+
+            <strong id="comprobantes-total-ventas">
+                0
+            </strong>
+        </article>
+
+        <article class="finance-summary-card success">
+            <span>Anticipos y abonos</span>
+
+            <strong id="comprobantes-total-cxc">
+                0
+            </strong>
+        </article>
+    </div>
+
+    <p
+        id="comprobantes-estado"
+        class="financial-dashboard-status"
+        role="status"
+        aria-live="polite"
+    ></p>
+
+    <!-- SELECTOR DE APARTADO -->
+    <div
+        class="comprobantes-tabs"
+        role="tablist"
+        aria-label="Tipos de comprobantes"
+    >
+        <button
+            type="button"
+            id="btn-comprobantes-publico"
+            class="btn-primary"
+            role="tab"
+            aria-selected="true"
+            aria-controls="comprobantes-panel-publico"
+            onclick="cambiarPestanaComprobantes('publico')"
+        >
+            Público general
+            (<span id="comprobantes-conteo-publico">0</span>)
+        </button>
+
+        <button
+            type="button"
+            id="btn-comprobantes-clientes"
+            class="btn-secondary"
+            role="tab"
+            aria-selected="false"
+            aria-controls="comprobantes-panel-clientes"
+            onclick="cambiarPestanaComprobantes('clientes')"
+        >
+            Ventas a clientes
+            (<span id="comprobantes-conteo-clientes">0</span>)
+        </button>
+
+        <button
+            type="button"
+            id="btn-comprobantes-cxc"
+            class="btn-secondary"
+            role="tab"
+            aria-selected="false"
+            aria-controls="comprobantes-panel-cxc"
+            onclick="cambiarPestanaComprobantes('cxc')"
+        >
+            Cuentas por cobrar
+            (<span id="comprobantes-conteo-cxc">0</span>)
+        </button>
+    </div>
+
+    <!-- PÚBLICO GENERAL -->
+    <section
+        id="comprobantes-panel-publico"
+        class="financial-chart-card"
+        role="tabpanel"
+        aria-labelledby="btn-comprobantes-publico"
+    >
+        <div class="financial-chart-heading">
+            <h3>Ventas a Público general</h3>
+
+            <p>
+                Comprobantes de ventas de contado realizadas
+                sin seleccionar un cliente registrado.
+            </p>
+        </div>
+
+        <p
+            id="comprobantes-resumen-publico"
+            class="table-summary"
+            aria-live="polite"
+        ></p>
+
+        <div class="tabla-container">
+            <table class="tabla-custom">
+                <thead>
+                    <tr>
+                        <th>Folio</th>
+                        <th>Fecha</th>
+                        <th>Productos</th>
+                        <th>Método de pago</th>
+                        <th>Importe recibido</th>
+                        <th>Comprobante</th>
+                    </tr>
+                </thead>
+
+                <tbody id="tabla-comprobantes-publico-body">
+                    <tr>
+                        <td
+                            colspan="6"
+                            style="text-align:center; color:#6b7280;"
+                        >
+                            Esperando información de ventas...
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <!-- VENTAS A CLIENTES -->
+    <section
+        id="comprobantes-panel-clientes"
+        class="financial-chart-card oculto"
+        role="tabpanel"
+        aria-labelledby="btn-comprobantes-clientes"
+    >
+        <div class="financial-chart-heading">
+            <h3>Ventas a clientes</h3>
+
+            <p>
+                Comprobantes de ventas de contado asociadas
+                a un cliente registrado.
+            </p>
+        </div>
+
+        <p
+            id="comprobantes-resumen-clientes"
+            class="table-summary"
+            aria-live="polite"
+        ></p>
+
+        <div class="tabla-container">
+            <table class="tabla-custom">
+                <thead>
+                    <tr>
+                        <th>Folio</th>
+                        <th>Fecha</th>
+                        <th>Cliente</th>
+                        <th>Productos</th>
+                        <th>Método de pago</th>
+                        <th>Importe recibido</th>
+                        <th>Comprobante</th>
+                    </tr>
+                </thead>
+
+                <tbody id="tabla-comprobantes-clientes-body">
+                    <tr>
+                        <td
+                            colspan="7"
+                            style="text-align:center; color:#6b7280;"
+                        >
+                            Esperando información de clientes...
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <!-- CUENTAS POR COBRAR -->
+    <section
+        id="comprobantes-panel-cxc"
+        class="financial-chart-card oculto"
+        role="tabpanel"
+        aria-labelledby="btn-comprobantes-cxc"
+    >
+        <div class="financial-chart-heading">
+            <h3>Pagos de Cuentas por cobrar</h3>
+
+            <p>
+                Un comprobante independiente por cada anticipo
+                o abono registrado.
+            </p>
+        </div>
+
+        <p
+            id="comprobantes-resumen-cxc"
+            class="table-summary"
+            aria-live="polite"
+        ></p>
+
+        <div class="tabla-container">
+            <table class="tabla-custom">
+                <thead>
+                    <tr>
+                        <th>Folio</th>
+                        <th>Fecha de pago</th>
+                        <th>Cliente</th>
+                        <th>Venta</th>
+                        <th>Concepto</th>
+                        <th>Método</th>
+                        <th>Importe</th>
+                        <th>Saldo posterior</th>
+                        <th>Comprobante</th>
+                    </tr>
+                </thead>
+
+                <tbody id="tabla-comprobantes-cxc-body">
+                    <tr>
+                        <td
+                            colspan="9"
+                            style="text-align:center; color:#6b7280;"
+                        >
+                            Esperando información de pagos...
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <!-- VISTA PREVIA -->
+    <section
+        id="comprobante-vista-previa"
+        class="card-form oculto"
+        aria-labelledby="comprobante-vista-previa-titulo"
+    >
+        <div class="cxc-detail-header">
+            <div>
+                <p class="eyebrow">
+                    Vista previa
+                </p>
+
+                <h3 id="comprobante-vista-previa-titulo">
+                    Comprobante de pago
+                </h3>
+            </div>
+
+            <div>
+                <button
+                    type="button"
+                    id="btn-descargar-comprobante"
+                    class="btn-primary"
+                >
+                    Descargar / imprimir PDF
+                </button>
+
+                <button
+                    type="button"
+                    id="btn-cerrar-comprobante"
+                    class="btn-secondary"
+                >
+                    Cerrar
+                </button>
+            </div>
+        </div>
+
+        <div
+            id="comprobante-contenido"
+            class="comprobante-documento"
+        >
+            <p>
+                Selecciona un comprobante para visualizarlo.
+            </p>
+        </div>
+    </section>
+</div>
 
         <div id="vista-clientes" class="module-container oculto">
             <div class="modulo-header">
@@ -1030,44 +1741,902 @@
 
         <div id="vista-crm-dashboard" class="module-container oculto">
             <div class="modulo-header">
-                <h2>Dashboard Comercial</h2>
+                <div>
+                    <p class="eyebrow">Rendimiento del proceso de venta</p>
+                    <h2>Dashboard comercial</h2>
+                </div>
+                <button type="button" id="btn-actualizar-dashboard-crm" class="btn-secondary" onclick="obtenerDashboardComercial()">
+                    Actualizar
+                </button>
             </div>
-            <p>Indicadores de prospectos, oportunidades y cierres en construcción...</p>
+
+            <div class="finance-summary-grid crm-dashboard-summary" aria-label="Indicadores comerciales">
+                <article class="finance-summary-card">
+                    <span>Prospectos activos</span>
+                    <strong id="dashboard-crm-prospectos">0</strong>
+                </article>
+                <article class="finance-summary-card danger">
+                    <span>Seguimientos vencidos</span>
+                    <strong id="dashboard-crm-vencidos">0</strong>
+                </article>
+                <article class="finance-summary-card">
+                    <span>Oportunidades activas</span>
+                    <strong id="dashboard-crm-oportunidades">0</strong>
+                </article>
+                <article class="finance-summary-card success">
+                    <span>Valor del embudo</span>
+                    <strong id="dashboard-crm-valor">$0.00</strong>
+                </article>
+                <article class="finance-summary-card">
+                    <span>Valor ponderado</span>
+                    <strong id="dashboard-crm-ponderado">$0.00</strong>
+                </article>
+                <article class="finance-summary-card warning">
+                    <span>Cotizaciones enviadas</span>
+                    <strong id="dashboard-crm-cotizaciones">0</strong>
+                </article>
+                <article class="finance-summary-card">
+                    <span>Tasa de conversion</span>
+                    <strong id="dashboard-crm-conversion">0.0%</strong>
+                </article>
+                <article class="finance-summary-card success">
+                    <span>Monto comercial ganado</span>
+                    <strong id="dashboard-crm-ganado">$0.00</strong>
+                </article>
+            </div>
+
+            <p id="dashboard-crm-estado" class="financial-dashboard-status" role="status" aria-live="polite"></p>
+
+            <div class="crm-dashboard-grid">
+                <section class="crm-dashboard-panel">
+                    <div class="crm-dashboard-panel-header">
+                        <div>
+                            <h3>Embudo por etapa</h3>
+                            <p>Oportunidades activas en cada paso.</p>
+                        </div>
+                    </div>
+                    <div id="dashboard-crm-etapas" class="crm-stage-list"></div>
+                </section>
+
+                <section class="crm-dashboard-panel">
+                    <div class="crm-dashboard-panel-header">
+                        <div>
+                            <h3>Motivos de perdida</h3>
+                            <p>Razones mas frecuentes de los cierres perdidos.</p>
+                        </div>
+                    </div>
+                    <div id="dashboard-crm-motivos" class="crm-reason-list"></div>
+                </section>
+            </div>
+
+            <section class="crm-dashboard-panel">
+                <div class="crm-dashboard-panel-header">
+                    <div>
+                        <h3>Seguimientos vencidos</h3>
+                        <p>Contactos activos que necesitan atencion.</p>
+                    </div>
+                    <button type="button" class="btn-secondary" onclick="cargarModulo('crm-prospectos')">
+                        Ir a prospectos
+                    </button>
+                </div>
+                <div class="tabla-container">
+                    <table class="tabla-custom">
+                        <thead>
+                            <tr>
+                                <th>Prospecto</th>
+                                <th>Interes</th>
+                                <th>Estatus</th>
+                                <th>Seguimiento</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dashboard-crm-seguimientos-body"></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="crm-dashboard-panel">
+                <div class="crm-dashboard-panel-header">
+                    <div>
+                        <h3>Cierres recientes</h3>
+                        <p>Ultimos resultados del proceso comercial.</p>
+                    </div>
+                    <button type="button" class="btn-secondary" onclick="cargarModulo('crm-negociaciones')">
+                        Ver historial
+                    </button>
+                </div>
+                <div class="tabla-container">
+                    <table class="tabla-custom">
+                        <thead>
+                            <tr>
+                                <th>Fecha</th>
+                                <th>Prospecto</th>
+                                <th>Oportunidad</th>
+                                <th>Resultado</th>
+                                <th>Monto final</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dashboard-crm-cierres-body"></tbody>
+                    </table>
+                </div>
+            </section>
         </div>
 
         <div id="vista-crm-prospectos" class="module-container oculto">
             <div class="modulo-header">
-                <h2>Prospectos</h2>
+                <div>
+                    <p class="eyebrow">Captacion comercial</p>
+                    <h2>Prospectos y seguimientos</h2>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn-secondary" onclick="obtenerProspectosAPI()">
+                        Actualizar
+                    </button>
+                    <button type="button" class="btn-primary" onclick="mostrarFormularioProspecto()">
+                        + Nuevo prospecto
+                    </button>
+                </div>
             </div>
-            <p>Registro y calificación de prospectos en construcción...</p>
+
+            <div class="finance-summary-grid" aria-label="Resumen de prospectos">
+                <article class="finance-summary-card">
+                    <span>Prospectos activos</span>
+                    <strong id="prospectos-resumen-activos">0</strong>
+                </article>
+                <article class="finance-summary-card danger">
+                    <span>Seguimientos vencidos</span>
+                    <strong id="prospectos-resumen-vencidos">0</strong>
+                </article>
+                <article class="finance-summary-card">
+                    <span>Seguimientos de hoy</span>
+                    <strong id="prospectos-resumen-hoy">0</strong>
+                </article>
+                <article class="finance-summary-card success">
+                    <span>Prospectos calificados</span>
+                    <strong id="prospectos-resumen-calificados">0</strong>
+                </article>
+            </div>
+
+            <div id="form-prospecto-container" class="card-form oculto">
+                <div class="modulo-header">
+                    <div>
+                        <p class="eyebrow">Datos comerciales</p>
+                        <h3 id="form-prospecto-titulo">Registrar prospecto</h3>
+                    </div>
+                    <button type="button" class="btn-secondary" onclick="ocultarFormularioProspecto()">
+                        Cerrar
+                    </button>
+                </div>
+
+                <form id="formProspecto" onsubmit="guardarProspecto(event)">
+                    <div class="form-grid">
+                        <div class="input-group">
+                            <label for="prospecto-tipo">Tipo de prospecto</label>
+                            <select id="prospecto-tipo" onchange="actualizarCamposProspecto()" required>
+                                <option value="Persona">Persona</option>
+                                <option value="Empresa">Empresa</option>
+                            </select>
+                        </div>
+
+                        <div class="input-group">
+                            <label id="prospecto-nombre-label" for="prospecto-nombre">Nombre completo</label>
+                            <input type="text" id="prospecto-nombre" minlength="2" maxlength="160" required>
+                        </div>
+
+                        <div id="prospecto-contacto-grupo" class="input-group oculto">
+                            <label for="prospecto-contacto">Contacto principal</label>
+                            <input type="text" id="prospecto-contacto" maxlength="160" placeholder="Persona con la que se esta negociando">
+                        </div>
+
+                        <div class="input-group">
+                            <label for="prospecto-telefono">Telefono</label>
+                            <input type="tel" id="prospecto-telefono" maxlength="30" placeholder="Ej. 81 1234 5678">
+                        </div>
+
+                        <div class="input-group">
+                            <label for="prospecto-email">Correo electronico</label>
+                            <input type="email" id="prospecto-email" maxlength="254" placeholder="contacto@empresa.com">
+                        </div>
+
+                        <div class="input-group">
+                            <label for="prospecto-origen">Origen</label>
+                            <input type="text" id="prospecto-origen" maxlength="60" list="prospectos-origenes" placeholder="Ej. Recomendacion">
+                            <datalist id="prospectos-origenes">
+                                <option value="Recomendacion"></option>
+                                <option value="Redes sociales"></option>
+                                <option value="Llamada"></option>
+                                <option value="Sitio web"></option>
+                                <option value="Visita"></option>
+                                <option value="Evento"></option>
+                            </datalist>
+                        </div>
+
+                        <div class="input-group">
+                            <label for="prospecto-estatus">Estatus</label>
+                            <select id="prospecto-estatus" onchange="actualizarCamposProspecto()" required>
+                                <option value="Nuevo">Nuevo</option>
+                                <option value="Contactado">Contactado</option>
+                                <option value="Calificado">Calificado</option>
+                                <option value="Descartado">Descartado</option>
+                            </select>
+                        </div>
+
+                        <div id="prospecto-seguimiento-grupo" class="input-group">
+                            <label for="prospecto-seguimiento">Proximo seguimiento</label>
+                            <input type="datetime-local" id="prospecto-seguimiento" required>
+                        </div>
+
+                        <div class="input-group">
+                            <label for="prospecto-interes">Interes en</label>
+                            <textarea id="prospecto-interes" rows="3" maxlength="1000" required placeholder="Producto, servicio o necesidad detectada"></textarea>
+                        </div>
+
+                        <div class="input-group">
+                            <label for="prospecto-informacion">Informacion adicional</label>
+                            <textarea id="prospecto-informacion" rows="3" maxlength="2000" placeholder="Giro, ubicacion, tamano u otros datos utiles"></textarea>
+                        </div>
+
+                        <div class="input-group">
+                            <label for="prospecto-comentarios">Comentarios</label>
+                            <textarea id="prospecto-comentarios" rows="3" maxlength="3000" placeholder="Contexto de la conversacion o necesidades del prospecto"></textarea>
+                        </div>
+
+                        <div id="prospecto-motivo-grupo" class="input-group oculto">
+                            <label for="prospecto-motivo">Motivo de descarte</label>
+                            <textarea id="prospecto-motivo" rows="3" maxlength="1000" placeholder="Explica por que no continuara el proceso"></textarea>
+                        </div>
+                    </div>
+
+                    <p id="prospecto-form-estado" class="financial-dashboard-status" role="status" aria-live="polite"></p>
+
+                    <div class="form-actions">
+                        <button type="submit" id="btn-guardar-prospecto" class="btn-primary">
+                            Guardar prospecto
+                        </button>
+                        <button type="button" class="btn-secondary" onclick="ocultarFormularioProspecto()">
+                            Cancelar
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <div id="seguimiento-prospecto-container" class="card-form oculto">
+                <div class="modulo-header">
+                    <div>
+                        <p class="eyebrow">Historial comercial</p>
+                        <h3 id="seguimiento-prospecto-titulo">Seguimiento de prospecto</h3>
+                        <p id="seguimiento-prospecto-resumen" class="table-summary"></p>
+                    </div>
+                    <button type="button" class="btn-secondary" onclick="cerrarSeguimientoProspecto()">
+                        Cerrar
+                    </button>
+                </div>
+
+                <form id="formSeguimientoProspecto" onsubmit="guardarSeguimientoProspecto(event)">
+                    <div class="form-grid">
+                        <div class="input-group">
+                            <label for="seguimiento-tipo">Tipo de contacto</label>
+                            <select id="seguimiento-tipo" required>
+                                <option value="Llamada">Llamada</option>
+                                <option value="WhatsApp">WhatsApp</option>
+                                <option value="Correo">Correo</option>
+                                <option value="Reunion">Reunion</option>
+                                <option value="Visita">Visita</option>
+                                <option value="Otro">Otro</option>
+                            </select>
+                        </div>
+
+                        <div class="input-group">
+                            <label for="seguimiento-fecha">Fecha del contacto</label>
+                            <input type="datetime-local" id="seguimiento-fecha" required>
+                        </div>
+
+                        <div class="input-group">
+                            <label for="seguimiento-resultado">Resultado</label>
+                            <select id="seguimiento-resultado" required>
+                                <option value="Sin respuesta">Sin respuesta</option>
+                                <option value="Contactado">Contactado</option>
+                                <option value="Interesado">Interesado</option>
+                                <option value="Reagendado">Reagendado</option>
+                                <option value="No interesado">No interesado</option>
+                                <option value="Avanzo">Avanzo</option>
+                            </select>
+                        </div>
+
+                        <div class="input-group">
+                            <label for="seguimiento-estatus">Nuevo estatus</label>
+                            <select id="seguimiento-estatus" onchange="actualizarCamposSeguimientoProspecto()" required>
+                                <option value="Nuevo">Nuevo</option>
+                                <option value="Contactado">Contactado</option>
+                                <option value="Calificado">Calificado</option>
+                                <option value="Descartado">Descartado</option>
+                            </select>
+                        </div>
+
+                        <div class="input-group">
+                            <label for="seguimiento-comentarios">Comentarios del contacto</label>
+                            <textarea id="seguimiento-comentarios" rows="3" minlength="2" maxlength="3000" required placeholder="Que se hablo, respuesta y puntos importantes"></textarea>
+                        </div>
+
+                        <div id="seguimiento-proxima-accion-grupo" class="input-group">
+                            <label for="seguimiento-proxima-accion">Proxima accion</label>
+                            <textarea id="seguimiento-proxima-accion" rows="3" maxlength="1000" required placeholder="Ej. Enviar catalogo y confirmar recepcion"></textarea>
+                        </div>
+
+                        <div id="seguimiento-proxima-fecha-grupo" class="input-group">
+                            <label for="seguimiento-proxima-fecha">Proximo seguimiento</label>
+                            <input type="datetime-local" id="seguimiento-proxima-fecha" required>
+                        </div>
+
+                        <div id="seguimiento-motivo-grupo" class="input-group oculto">
+                            <label for="seguimiento-motivo">Motivo de descarte</label>
+                            <textarea id="seguimiento-motivo" rows="3" maxlength="1000" placeholder="Explica por que no continuara el proceso"></textarea>
+                        </div>
+                    </div>
+
+                    <p id="seguimiento-form-estado" class="financial-dashboard-status" role="status" aria-live="polite"></p>
+
+                    <div class="form-actions">
+                        <button type="submit" id="btn-guardar-seguimiento" class="btn-primary">
+                            Guardar seguimiento
+                        </button>
+                        <button type="button" class="btn-secondary" onclick="limpiarFormularioSeguimientoProspecto()">
+                            Limpiar
+                        </button>
+                    </div>
+                </form>
+
+                <div class="modulo-header">
+                    <div>
+                        <h3>Historial de seguimientos</h3>
+                        <p id="seguimientos-resumen-registros" class="table-summary"></p>
+                    </div>
+                    <button type="button" class="btn-secondary" onclick="obtenerSeguimientosProspecto()">
+                        Actualizar historial
+                    </button>
+                </div>
+
+                <p id="seguimientos-estado" class="financial-dashboard-status" role="status" aria-live="polite"></p>
+
+                <div class="tabla-container">
+                    <table class="tabla-custom">
+                        <thead>
+                            <tr>
+                                <th>Fecha</th>
+                                <th>Tipo</th>
+                                <th>Resultado</th>
+                                <th>Cambio de estatus</th>
+                                <th>Comentarios</th>
+                                <th>Proxima accion</th>
+                                <th>Proximo contacto</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tabla-seguimientos-prospecto-body"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="client-filters" aria-label="Filtros de prospectos">
+                <div class="input-group client-search">
+                    <label for="prospectos-busqueda">Buscar</label>
+                    <input type="search" id="prospectos-busqueda" placeholder="Nombre, contacto, interes u origen" oninput="filtrarProspectos()">
+                </div>
+
+                <div class="input-group">
+                    <label for="prospectos-filtro-tipo">Tipo</label>
+                    <select id="prospectos-filtro-tipo" onchange="filtrarProspectos()">
+                        <option value="todos">Todos</option>
+                        <option value="Persona">Personas</option>
+                        <option value="Empresa">Empresas</option>
+                    </select>
+                </div>
+
+                <div class="input-group">
+                    <label for="prospectos-filtro-estatus">Estatus</label>
+                    <select id="prospectos-filtro-estatus" onchange="filtrarProspectos()">
+                        <option value="todos">Todos</option>
+                        <option value="Nuevo">Nuevo</option>
+                        <option value="Contactado">Contactado</option>
+                        <option value="Calificado">Calificado</option>
+                        <option value="Convertido">Convertido</option>
+                        <option value="Descartado">Descartado</option>
+                    </select>
+                </div>
+
+                <div class="input-group">
+                    <label for="prospectos-filtro-seguimiento">Seguimiento</label>
+                    <select id="prospectos-filtro-seguimiento" onchange="filtrarProspectos()">
+                        <option value="todos">Todos</option>
+                        <option value="vencidos">Vencidos</option>
+                        <option value="hoy">Para hoy</option>
+                        <option value="proximos">Proximos 7 dias</option>
+                        <option value="sin-fecha">Sin fecha</option>
+                    </select>
+                </div>
+
+                <button type="button" class="btn-secondary client-refresh" onclick="restablecerFiltrosProspectos()">
+                    Limpiar
+                </button>
+            </div>
+
+            <p id="prospectos-resumen-registros" class="table-summary" aria-live="polite"></p>
+            <p id="prospectos-estado" class="financial-dashboard-status" role="status" aria-live="polite"></p>
+
+            <div class="tabla-container">
+                <table class="tabla-custom">
+                    <thead>
+                        <tr>
+                            <th>Prospecto</th>
+                            <th>Contacto</th>
+                            <th>Interes</th>
+                            <th>Origen</th>
+                            <th>Estatus</th>
+                            <th>Proximo seguimiento</th>
+                            <th>Actualizado</th>
+                            <th>Accion</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabla-prospectos-body"></tbody>
+                </table>
+            </div>
         </div>
 
         <div id="vista-crm-embudo" class="module-container oculto">
             <div class="modulo-header">
-                <h2>Embudo de Ventas</h2>
+                <div>
+                    <p class="eyebrow">Proceso comercial activo</p>
+                    <h2>Embudo y cotizaciones</h2>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn-secondary" onclick="obtenerEmbudoCRM()">
+                        Actualizar
+                    </button>
+                    <button type="button" class="btn-primary" onclick="mostrarFormularioOportunidadCRM()">
+                        + Nueva oportunidad
+                    </button>
+                </div>
             </div>
-            <p>Etapas comerciales y movimiento de oportunidades en construcción...</p>
+
+            <div class="finance-summary-grid" aria-label="Resumen del embudo">
+                <article class="finance-summary-card">
+                    <span>Oportunidades activas</span>
+                    <strong id="embudo-resumen-oportunidades">0</strong>
+                </article>
+                <article class="finance-summary-card success">
+                    <span>Valor del embudo</span>
+                    <strong id="embudo-resumen-valor">$0.00</strong>
+                </article>
+                <article class="finance-summary-card">
+                    <span>Cotizaciones enviadas</span>
+                    <strong id="embudo-resumen-enviadas">0</strong>
+                </article>
+                <article class="finance-summary-card warning">
+                    <span>Esperando decision</span>
+                    <strong id="embudo-resumen-decision">0</strong>
+                </article>
+            </div>
+
+            <div id="form-oportunidad-container" class="card-form oculto">
+                <div class="modulo-header">
+                    <div>
+                        <p class="eyebrow">Oportunidad comercial</p>
+                        <h3 id="form-oportunidad-titulo">Nueva oportunidad</h3>
+                    </div>
+                    <button type="button" class="btn-secondary" onclick="ocultarFormularioOportunidadCRM()">
+                        Cerrar
+                    </button>
+                </div>
+
+                <form id="formOportunidadCRM" onsubmit="guardarOportunidadCRM(event)">
+                    <div class="form-grid">
+                        <div class="input-group">
+                            <label for="oportunidad-prospecto">Prospecto calificado</label>
+                            <select id="oportunidad-prospecto" required></select>
+                        </div>
+
+                        <div class="input-group">
+                            <label for="oportunidad-titulo">Nombre de la oportunidad</label>
+                            <input type="text" id="oportunidad-titulo" minlength="2" maxlength="180" required placeholder="Ej. Implementacion de sistema">
+                        </div>
+
+                        <div class="input-group">
+                            <label for="oportunidad-etapa">Etapa</label>
+                            <select id="oportunidad-etapa" onchange="sincronizarProbabilidadEtapaCRM()" required>
+                                <option value="Interes detectado">Interes detectado</option>
+                                <option value="Preparando cotizacion">Preparando cotizacion</option>
+                                <option value="Cotizacion enviada">Cotizacion enviada</option>
+                                <option value="En revision">En revision</option>
+                                <option value="Esperando decision">Esperando decision</option>
+                            </select>
+                        </div>
+
+                        <div class="input-group">
+                            <label for="oportunidad-valor">Valor estimado</label>
+                            <input type="number" id="oportunidad-valor" min="0" step="0.01" value="0" required>
+                        </div>
+
+                        <div class="input-group">
+                            <label for="oportunidad-probabilidad">Probabilidad (%)</label>
+                            <input type="number" id="oportunidad-probabilidad" min="0" max="100" step="1" value="10" required>
+                        </div>
+
+                        <div class="input-group crm-field-wide">
+                            <label for="oportunidad-notas">Notas</label>
+                            <textarea id="oportunidad-notas" rows="3" maxlength="3000" placeholder="Alcance, necesidades o condiciones comerciales"></textarea>
+                        </div>
+                    </div>
+
+                    <p id="oportunidad-form-estado" class="financial-dashboard-status" role="status" aria-live="polite"></p>
+
+                    <div class="form-actions">
+                        <button type="submit" id="btn-guardar-oportunidad" class="btn-primary">
+                            Guardar oportunidad
+                        </button>
+                        <button type="button" class="btn-secondary" onclick="ocultarFormularioOportunidadCRM()">
+                            Cancelar
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <div id="form-cierre-oportunidad-container" class="card-form oculto">
+                <div class="modulo-header">
+                    <div>
+                        <p class="eyebrow">Resultado final</p>
+                        <h3 id="form-cierre-oportunidad-titulo">Cerrar negociacion</h3>
+                        <p id="form-cierre-oportunidad-resumen" class="table-summary"></p>
+                    </div>
+                    <button type="button" class="btn-secondary" onclick="cerrarFormularioCierreNegociacionCRM()">
+                        Cerrar
+                    </button>
+                </div>
+
+                <form id="formCierreNegociacionCRM" onsubmit="guardarCierreNegociacionCRM(event)">
+                    <div class="form-grid">
+                        <div class="input-group">
+                            <label for="cierre-resultado">Resultado</label>
+                            <select id="cierre-resultado" onchange="actualizarCamposCierreNegociacionCRM()" required>
+                                <option value="Compro">Compro</option>
+                                <option value="No compro">No compro</option>
+                            </select>
+                        </div>
+
+                        <div class="input-group">
+                            <label for="cierre-fecha">Fecha de cierre</label>
+                            <input type="date" id="cierre-fecha" required>
+                        </div>
+
+                        <div class="input-group">
+                            <label for="cierre-cotizacion">Cotizacion relacionada</label>
+                            <select id="cierre-cotizacion" onchange="sincronizarMontoCierreCRM()"></select>
+                        </div>
+
+                        <div id="cierre-monto-grupo" class="input-group">
+                            <label for="cierre-monto">Monto final acordado</label>
+                            <input type="number" id="cierre-monto" min="0.01" step="0.01">
+                        </div>
+
+                        <div id="cierre-cliente-grupo" class="input-group crm-field-wide">
+                            <label for="cierre-cliente">Cliente relacionado</label>
+                            <select id="cierre-cliente">
+                                <option value="">Crear o vincular automaticamente desde el prospecto</option>
+                            </select>
+                            <small>Si no seleccionas uno, el sistema buscara coincidencias o creara el cliente.</small>
+                        </div>
+
+                        <div id="cierre-motivo-grupo" class="input-group crm-field-wide oculto">
+                            <label for="cierre-motivo">Motivo por el que no compro</label>
+                            <textarea id="cierre-motivo" rows="3" maxlength="1000" placeholder="Ej. Precio, sin presupuesto, eligio otro proveedor"></textarea>
+                        </div>
+
+                        <div class="input-group crm-field-wide">
+                            <label for="cierre-notas">Notas finales</label>
+                            <textarea id="cierre-notas" rows="3" maxlength="3000" placeholder="Acuerdos, contexto o comentarios finales"></textarea>
+                        </div>
+                    </div>
+
+                    <p id="cierre-form-estado" class="financial-dashboard-status" role="status" aria-live="polite"></p>
+
+                    <div class="form-actions">
+                        <button type="submit" id="btn-guardar-cierre" class="btn-primary">
+                            Cerrar negociacion
+                        </button>
+                        <button type="button" class="btn-secondary" onclick="cerrarFormularioCierreNegociacionCRM()">
+                            Cancelar
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <div id="form-cotizacion-container" class="card-form oculto">
+                <div class="modulo-header">
+                    <div>
+                        <p class="eyebrow">Versiones comerciales</p>
+                        <h3 id="form-cotizacion-titulo">Nueva cotizacion</h3>
+                        <p id="form-cotizacion-resumen" class="table-summary"></p>
+                    </div>
+                    <button type="button" class="btn-secondary" onclick="cerrarFormularioCotizacionCRM()">
+                        Cerrar
+                    </button>
+                </div>
+
+                <form id="formCotizacionCRM" onsubmit="guardarCotizacionCRM(event)">
+                    <div class="form-grid">
+                        <div class="input-group">
+                            <label for="cotizacion-estado">Estado inicial</label>
+                            <select id="cotizacion-estado" required>
+                                <option value="Borrador">Borrador</option>
+                                <option value="Enviada">Enviada al prospecto</option>
+                            </select>
+                        </div>
+
+                        <div class="input-group">
+                            <label for="cotizacion-vigencia">Vigencia hasta</label>
+                            <input type="date" id="cotizacion-vigencia" required>
+                        </div>
+
+                        <div class="input-group">
+                            <label for="cotizacion-descuento">Descuento (%)</label>
+                            <input type="number" id="cotizacion-descuento" min="0" max="100" step="0.01" value="0" oninput="calcularTotalesCotizacionCRM()" required>
+                        </div>
+
+                        <div class="input-group">
+                            <label for="cotizacion-impuesto">Impuesto (%)</label>
+                            <input type="number" id="cotizacion-impuesto" min="0" max="100" step="0.01" value="16" oninput="calcularTotalesCotizacionCRM()" required>
+                        </div>
+
+                        <div class="input-group crm-field-wide">
+                            <label for="cotizacion-notas">Notas de la cotizacion</label>
+                            <textarea id="cotizacion-notas" rows="3" maxlength="3000" placeholder="Condiciones, tiempo de entrega o aclaraciones"></textarea>
+                        </div>
+                    </div>
+
+                    <div class="modulo-header crm-section-header">
+                        <div>
+                            <h4>Partidas</h4>
+                            <p class="table-summary">Cada guardado crea una version nueva.</p>
+                        </div>
+                        <button type="button" class="btn-secondary" onclick="agregarPartidaCotizacionCRM()">
+                            + Agregar partida
+                        </button>
+                    </div>
+
+                    <div class="tabla-container">
+                        <table class="tabla-custom crm-quote-items-table">
+                            <thead>
+                                <tr>
+                                    <th>Concepto</th>
+                                    <th>Cantidad</th>
+                                    <th>Precio unitario</th>
+                                    <th>Subtotal</th>
+                                    <th>Accion</th>
+                                </tr>
+                            </thead>
+                            <tbody id="cotizacion-partidas-body"></tbody>
+                        </table>
+                    </div>
+
+                    <div class="crm-quote-totals" aria-label="Totales de cotizacion">
+                        <div><span>Subtotal</span><strong id="cotizacion-total-subtotal">$0.00</strong></div>
+                        <div><span>Descuento</span><strong id="cotizacion-total-descuento">$0.00</strong></div>
+                        <div><span>Impuesto</span><strong id="cotizacion-total-impuesto">$0.00</strong></div>
+                        <div class="crm-quote-total-main"><span>Total</span><strong id="cotizacion-total-final">$0.00</strong></div>
+                    </div>
+
+                    <p id="cotizacion-form-estado" class="financial-dashboard-status" role="status" aria-live="polite"></p>
+
+                    <div class="form-actions">
+                        <button type="submit" id="btn-guardar-cotizacion" class="btn-primary">
+                            Guardar nueva version
+                        </button>
+                        <button type="button" class="btn-secondary" onclick="limpiarFormularioCotizacionCRM()">
+                            Limpiar
+                        </button>
+                    </div>
+                </form>
+
+                <div class="modulo-header crm-section-header">
+                    <div>
+                        <h4>Historial de versiones</h4>
+                        <p id="cotizaciones-historial-resumen" class="table-summary"></p>
+                    </div>
+                </div>
+
+                <div class="tabla-container">
+                    <table class="tabla-custom">
+                        <thead>
+                            <tr>
+                                <th>Folio</th>
+                                <th>Version</th>
+                                <th>Estado</th>
+                                <th>Vigencia</th>
+                                <th>Total</th>
+                                <th>Accion</th>
+                            </tr>
+                        </thead>
+                        <tbody id="cotizaciones-historial-body"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div id="cotizacion-vista-previa" class="card-form oculto">
+                <div class="modulo-header">
+                    <div>
+                        <p class="eyebrow">Vista previa</p>
+                        <h3 id="cotizacion-vista-titulo">Cotizacion</h3>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn-primary" onclick="imprimirCotizacionCRM()">
+                            Imprimir / guardar PDF
+                        </button>
+                        <button type="button" class="btn-secondary" onclick="cerrarVistaCotizacionCRM()">
+                            Cerrar
+                        </button>
+                    </div>
+                </div>
+                <div id="cotizacion-vista-contenido"></div>
+            </div>
+
+            <div class="client-filters" aria-label="Filtros del embudo">
+                <div class="input-group client-search">
+                    <label for="embudo-busqueda">Buscar</label>
+                    <input type="search" id="embudo-busqueda" placeholder="Prospecto, oportunidad o folio" oninput="filtrarEmbudoCRM()">
+                </div>
+
+                <div class="input-group">
+                    <label for="embudo-filtro-etapa">Etapa</label>
+                    <select id="embudo-filtro-etapa" onchange="filtrarEmbudoCRM()">
+                        <option value="todas">Todas</option>
+                        <option value="Interes detectado">Interes detectado</option>
+                        <option value="Preparando cotizacion">Preparando cotizacion</option>
+                        <option value="Cotizacion enviada">Cotizacion enviada</option>
+                        <option value="En revision">En revision</option>
+                        <option value="Esperando decision">Esperando decision</option>
+                    </select>
+                </div>
+
+                <button type="button" class="btn-secondary client-refresh" onclick="restablecerFiltrosEmbudoCRM()">
+                    Limpiar
+                </button>
+            </div>
+
+            <p id="embudo-estado" class="financial-dashboard-status" role="status" aria-live="polite"></p>
+
+            <div class="crm-funnel-board" aria-label="Etapas del embudo de ventas">
+                <section class="crm-funnel-column" data-etapa="Interes detectado">
+                    <header>
+                        <h3>Interes detectado</h3>
+                        <span id="embudo-conteo-interes" class="badge-neutral">0</span>
+                    </header>
+                    <div id="embudo-columna-interes" class="crm-funnel-cards"></div>
+                </section>
+
+                <section class="crm-funnel-column" data-etapa="Preparando cotizacion">
+                    <header>
+                        <h3>Preparando cotizacion</h3>
+                        <span id="embudo-conteo-preparando" class="badge-neutral">0</span>
+                    </header>
+                    <div id="embudo-columna-preparando" class="crm-funnel-cards"></div>
+                </section>
+
+                <section class="crm-funnel-column" data-etapa="Cotizacion enviada">
+                    <header>
+                        <h3>Cotizacion enviada</h3>
+                        <span id="embudo-conteo-enviada" class="badge-neutral">0</span>
+                    </header>
+                    <div id="embudo-columna-enviada" class="crm-funnel-cards"></div>
+                </section>
+
+                <section class="crm-funnel-column" data-etapa="En revision">
+                    <header>
+                        <h3>En revision</h3>
+                        <span id="embudo-conteo-revision" class="badge-neutral">0</span>
+                    </header>
+                    <div id="embudo-columna-revision" class="crm-funnel-cards"></div>
+                </section>
+
+                <section class="crm-funnel-column" data-etapa="Esperando decision">
+                    <header>
+                        <h3>Esperando decision</h3>
+                        <span id="embudo-conteo-decision" class="badge-neutral">0</span>
+                    </header>
+                    <div id="embudo-columna-decision" class="crm-funnel-cards"></div>
+                </section>
+            </div>
         </div>
 
         <div id="vista-crm-negociaciones" class="module-container oculto">
             <div class="modulo-header">
-                <h2>Negociaciones</h2>
+                <div>
+                    <p class="eyebrow">Historial comercial</p>
+                    <h2>Negociaciones cerradas</h2>
+                </div>
+                <button type="button" id="btn-actualizar-negociaciones-crm" class="btn-secondary" onclick="obtenerNegociacionesCerradasCRM()">
+                    Actualizar
+                </button>
             </div>
-            <p>Importes, probabilidades y fechas estimadas de cierre en construcción...</p>
-        </div>
 
-        <div id="vista-crm-seguimientos" class="module-container oculto">
-            <div class="modulo-header">
-                <h2>Seguimientos</h2>
+            <div class="finance-summary-grid" aria-label="Resumen de negociaciones cerradas">
+                <article class="finance-summary-card">
+                    <span>Total de cierres</span>
+                    <strong id="negociaciones-resumen-total">0</strong>
+                </article>
+                <article class="finance-summary-card success">
+                    <span>Ganadas</span>
+                    <strong id="negociaciones-resumen-ganadas">0</strong>
+                </article>
+                <article class="finance-summary-card danger">
+                    <span>Perdidas</span>
+                    <strong id="negociaciones-resumen-perdidas">0</strong>
+                </article>
+                <article class="finance-summary-card">
+                    <span>Tasa de conversion</span>
+                    <strong id="negociaciones-resumen-conversion">0.0%</strong>
+                </article>
+                <article class="finance-summary-card success">
+                    <span>Monto comercial ganado</span>
+                    <strong id="negociaciones-resumen-monto">$0.00</strong>
+                </article>
             </div>
-            <p>Llamadas, reuniones, tareas y próximos contactos en construcción...</p>
-        </div>
 
-        <div id="vista-crm-cotizaciones" class="module-container oculto">
-            <div class="modulo-header">
-                <h2>Cotizaciones</h2>
+            <div class="client-filters" aria-label="Filtros de negociaciones cerradas">
+                <div class="input-group client-search">
+                    <label for="negociaciones-busqueda">Buscar</label>
+                    <input type="search" id="negociaciones-busqueda" placeholder="Prospecto, oportunidad, cliente o folio" oninput="filtrarNegociacionesCerradasCRM()">
+                </div>
+                <div class="input-group">
+                    <label for="negociaciones-filtro-resultado">Resultado</label>
+                    <select id="negociaciones-filtro-resultado" onchange="filtrarNegociacionesCerradasCRM()">
+                        <option value="todos">Todos</option>
+                        <option value="Compro">Compro</option>
+                        <option value="No compro">No compro</option>
+                    </select>
+                </div>
+                <div class="input-group">
+                    <label for="negociaciones-fecha-inicio">Desde</label>
+                    <input type="date" id="negociaciones-fecha-inicio" onchange="filtrarNegociacionesCerradasCRM()">
+                </div>
+                <div class="input-group">
+                    <label for="negociaciones-fecha-fin">Hasta</label>
+                    <input type="date" id="negociaciones-fecha-fin" onchange="filtrarNegociacionesCerradasCRM()">
+                </div>
+                <button type="button" class="btn-secondary client-refresh" onclick="restablecerFiltrosNegociacionesCerradasCRM()">
+                    Limpiar
+                </button>
             </div>
-            <p>Creación y seguimiento de propuestas comerciales en construcción...</p>
+
+            <p id="negociaciones-cerradas-estado" class="financial-dashboard-status" role="status" aria-live="polite"></p>
+            <p id="negociaciones-cerradas-resumen" class="table-summary" aria-live="polite"></p>
+
+            <div class="tabla-container">
+                <table class="tabla-custom">
+                    <thead>
+                        <tr>
+                            <th>Fecha</th>
+                            <th>Prospecto</th>
+                            <th>Oportunidad</th>
+                            <th>Cotizacion</th>
+                            <th>Resultado</th>
+                            <th>Monto final</th>
+                            <th>Cliente</th>
+                            <th>Accion</th>
+                        </tr>
+                    </thead>
+                    <tbody id="negociaciones-cerradas-body"></tbody>
+                </table>
+            </div>
+
+            <div id="negociacion-detalle-container" class="card-form oculto">
+                <div class="modulo-header">
+                    <div>
+                        <p class="eyebrow">Detalle del cierre</p>
+                        <h3 id="negociacion-detalle-titulo">Negociacion</h3>
+                    </div>
+                    <button type="button" class="btn-secondary" onclick="cerrarDetalleNegociacionCRM()">
+                        Cerrar
+                    </button>
+                </div>
+                <div id="negociacion-detalle-contenido"></div>
+            </div>
         </div>
 
         <div id="vista-rrhh-empleados" class="module-container oculto">
@@ -1135,6 +2704,6 @@
 
     </main>
 
-    <script src="/static/dashboard.js?v=altas-rapidas-20260811-1"></script>
+    <script src="/static/dashboard.js?v=crm-completo-20260818-1"></script>
 </body>
 </html>

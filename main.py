@@ -1,5 +1,6 @@
 import re
 from datetime import date, datetime
+from decimal import Decimal
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -28,6 +29,11 @@ class LoginData(BaseModel):
 def procesar_login(datos: LoginData):
     resultado = database.verificar_login(datos.usuario, datos.password)
     return resultado
+
+
+@app.get("/api/empresas/{id_empresa}/nombre")
+def consultar_nombre_empresa(id_empresa: int):
+    return database.obtener_nombre_empresa(id_empresa)
 
 class ProductoSchema(BaseModel):
     id_empresa: int
@@ -251,6 +257,419 @@ def editar_cliente(id_cliente: int, cliente: ClienteSchema):
 def actualizar_estado_cliente(id_cliente: int, estado: ClienteEstadoSchema):
     return database.cambiar_estado_cliente(id_cliente, estado.id_empresa, estado.activo)
 
+
+class ProspectoSchema(BaseModel):
+    id_empresa: int = Field(gt=0)
+    tipo_prospecto: Literal["Persona", "Empresa"] = "Persona"
+    nombre: str = Field(min_length=2, max_length=160)
+    contacto_principal: Optional[str] = Field(default=None, max_length=160)
+    telefono: Optional[str] = Field(default=None, max_length=30)
+    email: Optional[str] = Field(default=None, max_length=254)
+    informacion_adicional: Optional[str] = Field(default=None, max_length=2000)
+    interes_en: str = Field(min_length=2, max_length=1000)
+    origen: Optional[str] = Field(default=None, max_length=60)
+    comentarios: Optional[str] = Field(default=None, max_length=3000)
+    proximo_seguimiento: Optional[datetime] = None
+    estatus: Literal[
+        "Nuevo",
+        "Contactado",
+        "Calificado",
+        "Descartado"
+    ] = "Nuevo"
+    motivo_descarte: Optional[str] = Field(default=None, max_length=1000)
+
+    @field_validator("nombre", "interes_en", mode="before")
+    @classmethod
+    def limpiar_campos_requeridos(cls, valor):
+        if not isinstance(valor, str):
+            raise ValueError("El campo debe ser texto")
+        return valor.strip()
+
+    @field_validator(
+        "contacto_principal",
+        "telefono",
+        "email",
+        "informacion_adicional",
+        "origen",
+        "comentarios",
+        "motivo_descarte",
+        mode="before"
+    )
+    @classmethod
+    def limpiar_campos_opcionales(cls, valor):
+        if valor is None or str(valor).strip() == "":
+            return None
+        return str(valor).strip()
+
+    @model_validator(mode="after")
+    def validar_reglas_prospecto(self):
+        if self.telefono and not re.fullmatch(
+            r"[0-9+()\-\s.]{7,30}",
+            self.telefono
+        ):
+            raise ValueError("El teléfono contiene caracteres no válidos")
+
+        if self.email:
+            self.email = self.email.lower()
+            if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", self.email):
+                raise ValueError("El correo electrónico no es válido")
+
+        if self.tipo_prospecto == "Persona":
+            self.contacto_principal = None
+
+        if self.estatus in {"Nuevo", "Contactado", "Calificado"}:
+            if self.proximo_seguimiento is None:
+                raise ValueError(
+                    "Los prospectos activos necesitan un próximo seguimiento"
+                )
+            self.motivo_descarte = None
+
+        if self.estatus == "Descartado":
+            if not self.motivo_descarte:
+                raise ValueError(
+                    "Escribe el motivo por el que se descartó el prospecto"
+                )
+            self.proximo_seguimiento = None
+
+        return self
+
+
+def datos_prospecto_para_database(prospecto: ProspectoSchema):
+    datos = prospecto.model_dump()
+    seguimiento = prospecto.proximo_seguimiento
+    datos["proximo_seguimiento"] = (
+        seguimiento.isoformat() if seguimiento else None
+    )
+    return datos
+
+
+@app.get("/api/prospectos/{id_empresa}")
+def listar_prospectos(id_empresa: int):
+    datos = database.obtener_prospectos(id_empresa)
+    if datos is None:
+        return {
+            "status": "error",
+            "mensaje": "No se pudieron consultar los prospectos",
+            "data": []
+        }
+    return {"status": "success", "data": datos}
+
+
+@app.post("/api/prospectos")
+def guardar_prospecto(prospecto: ProspectoSchema):
+    return database.crear_prospecto(
+        datos_prospecto_para_database(prospecto)
+    )
+
+
+@app.put("/api/prospectos/{id_prospecto}")
+def editar_prospecto(
+    id_prospecto: int,
+    prospecto: ProspectoSchema
+):
+    datos = datos_prospecto_para_database(prospecto)
+    id_empresa = datos.pop("id_empresa")
+    return database.actualizar_prospecto(
+        id_prospecto=id_prospecto,
+        id_empresa=id_empresa,
+        datos_prospecto=datos
+    )
+
+
+class SeguimientoProspectoSchema(BaseModel):
+    id_empresa: int = Field(gt=0)
+    id_usuario: int = Field(gt=0)
+    tipo: Literal[
+        "Llamada",
+        "WhatsApp",
+        "Correo",
+        "Reunion",
+        "Visita",
+        "Otro"
+    ]
+    fecha_seguimiento: datetime
+    resultado: Literal[
+        "Sin respuesta",
+        "Contactado",
+        "Interesado",
+        "Reagendado",
+        "No interesado",
+        "Avanzo"
+    ]
+    comentarios: str = Field(min_length=2, max_length=3000)
+    proxima_accion: Optional[str] = Field(
+        default=None,
+        max_length=1000
+    )
+    proximo_seguimiento: Optional[datetime] = None
+    estatus_nuevo: Literal[
+        "Nuevo",
+        "Contactado",
+        "Calificado",
+        "Descartado"
+    ]
+    motivo_descarte: Optional[str] = Field(
+        default=None,
+        max_length=1000
+    )
+
+    @field_validator("comentarios", mode="before")
+    @classmethod
+    def limpiar_comentarios_seguimiento(cls, valor):
+        if not isinstance(valor, str):
+            raise ValueError("Los comentarios deben ser texto")
+        return valor.strip()
+
+    @field_validator(
+        "proxima_accion",
+        "motivo_descarte",
+        mode="before"
+    )
+    @classmethod
+    def limpiar_opcionales_seguimiento(cls, valor):
+        if valor is None or str(valor).strip() == "":
+            return None
+        return str(valor).strip()
+
+    @model_validator(mode="after")
+    def validar_reglas_seguimiento(self):
+        if self.estatus_nuevo == "Descartado":
+            if not self.motivo_descarte:
+                raise ValueError("Indica el motivo de descarte")
+            self.proxima_accion = None
+            self.proximo_seguimiento = None
+        else:
+            if not self.proxima_accion:
+                raise ValueError("Indica la proxima accion")
+            if self.proximo_seguimiento is None:
+                raise ValueError("Indica el proximo seguimiento")
+            self.motivo_descarte = None
+
+        return self
+
+
+def datos_seguimiento_para_database(
+    seguimiento: SeguimientoProspectoSchema
+):
+    datos = seguimiento.model_dump()
+    datos["fecha_seguimiento"] = (
+        seguimiento.fecha_seguimiento.isoformat()
+    )
+    datos["proximo_seguimiento"] = (
+        seguimiento.proximo_seguimiento.isoformat()
+        if seguimiento.proximo_seguimiento
+        else None
+    )
+    return datos
+
+
+@app.get("/api/prospectos/{id_prospecto}/seguimientos")
+def listar_seguimientos_prospecto(
+    id_prospecto: int,
+    id_empresa: int
+):
+    return database.obtener_seguimientos_prospecto(
+        id_prospecto=id_prospecto,
+        id_empresa=id_empresa
+    )
+
+
+@app.post("/api/prospectos/{id_prospecto}/seguimientos")
+def guardar_seguimiento_prospecto(
+    id_prospecto: int,
+    seguimiento: SeguimientoProspectoSchema
+):
+    return database.registrar_seguimiento_prospecto(
+        id_prospecto=id_prospecto,
+        datos_seguimiento=datos_seguimiento_para_database(
+            seguimiento
+        )
+    )
+
+
+EtapaEmbudo = Literal[
+    "Interes detectado",
+    "Preparando cotizacion",
+    "Cotizacion enviada",
+    "En revision",
+    "Esperando decision"
+]
+
+
+class OportunidadCRMCamposSchema(BaseModel):
+    id_empresa: int = Field(gt=0)
+    id_usuario: int = Field(gt=0)
+    titulo: str = Field(min_length=2, max_length=180)
+    etapa: EtapaEmbudo = "Interes detectado"
+    valor_estimado: Decimal = Field(default=0, ge=0)
+    probabilidad: int = Field(default=10, ge=0, le=100)
+    notas: Optional[str] = Field(default=None, max_length=3000)
+
+    @field_validator("titulo", mode="before")
+    @classmethod
+    def limpiar_titulo_oportunidad(cls, valor):
+        if not isinstance(valor, str):
+            raise ValueError("El titulo debe ser texto")
+        return valor.strip()
+
+    @field_validator("notas", mode="before")
+    @classmethod
+    def limpiar_notas_oportunidad(cls, valor):
+        if valor is None or str(valor).strip() == "":
+            return None
+        return str(valor).strip()
+
+
+class OportunidadCRMCrearSchema(OportunidadCRMCamposSchema):
+    id_prospecto: int = Field(gt=0)
+
+
+class PartidaCotizacionCRMSchema(BaseModel):
+    concepto: str = Field(min_length=2, max_length=300)
+    cantidad: Decimal = Field(gt=0)
+    precio_unitario: Decimal = Field(ge=0)
+
+    @field_validator("concepto", mode="before")
+    @classmethod
+    def limpiar_concepto_cotizacion(cls, valor):
+        if not isinstance(valor, str):
+            raise ValueError("El concepto debe ser texto")
+        return valor.strip()
+
+
+class CotizacionCRMSchema(BaseModel):
+    id_empresa: int = Field(gt=0)
+    id_usuario: int = Field(gt=0)
+    estado: Literal["Borrador", "Enviada"] = "Borrador"
+    vigencia_hasta: date
+    descuento_porcentaje: Decimal = Field(default=0, ge=0, le=100)
+    impuesto_porcentaje: Decimal = Field(default=16, ge=0, le=100)
+    notas: Optional[str] = Field(default=None, max_length=3000)
+    partidas: list[PartidaCotizacionCRMSchema] = Field(
+        min_length=1,
+        max_length=50
+    )
+
+    @field_validator("notas", mode="before")
+    @classmethod
+    def limpiar_notas_cotizacion(cls, valor):
+        if valor is None or str(valor).strip() == "":
+            return None
+        return str(valor).strip()
+
+    @model_validator(mode="after")
+    def validar_vigencia_cotizacion(self):
+        if self.vigencia_hasta < date.today():
+            raise ValueError(
+                "La vigencia no puede terminar en una fecha pasada"
+            )
+        return self
+
+
+@app.get("/api/crm/embudo/{id_empresa}")
+def consultar_embudo_crm(id_empresa: int):
+    return database.obtener_embudo_crm(id_empresa)
+
+
+@app.post("/api/crm/oportunidades")
+def guardar_oportunidad_crm(
+    oportunidad: OportunidadCRMCrearSchema
+):
+    return database.crear_oportunidad_crm(
+        oportunidad.model_dump(mode="json")
+    )
+
+
+@app.put("/api/crm/oportunidades/{id_oportunidad}")
+def editar_oportunidad_crm(
+    id_oportunidad: int,
+    oportunidad: OportunidadCRMCamposSchema
+):
+    return database.actualizar_oportunidad_crm(
+        id_oportunidad=id_oportunidad,
+        datos=oportunidad.model_dump(mode="json")
+    )
+
+
+@app.post(
+    "/api/crm/oportunidades/{id_oportunidad}/cotizaciones"
+)
+def guardar_cotizacion_crm(
+    id_oportunidad: int,
+    cotizacion: CotizacionCRMSchema
+):
+    return database.crear_cotizacion_crm(
+        id_oportunidad=id_oportunidad,
+        datos=cotizacion.model_dump(mode="json")
+    )
+
+
+class CierreNegociacionCRMSchema(BaseModel):
+    id_empresa: int = Field(gt=0)
+    id_usuario: int = Field(gt=0)
+    resultado: Literal["Compro", "No compro"]
+    id_cotizacion: Optional[int] = Field(default=None, gt=0)
+    id_cliente: Optional[int] = Field(default=None, gt=0)
+    monto_final: Decimal = Field(default=0, ge=0)
+    motivo_perdida: Optional[str] = Field(default=None, max_length=1000)
+    notas: Optional[str] = Field(default=None, max_length=3000)
+    fecha_cierre: date
+
+    @field_validator("motivo_perdida", "notas", mode="before")
+    @classmethod
+    def limpiar_textos_cierre(cls, valor):
+        if valor is None or str(valor).strip() == "":
+            return None
+        return str(valor).strip()
+
+    @model_validator(mode="after")
+    def validar_cierre_negociacion(self):
+        if self.fecha_cierre > date.today():
+            raise ValueError(
+                "La fecha de cierre no puede estar en el futuro"
+            )
+
+        if self.resultado == "Compro":
+            if self.id_cotizacion is None:
+                raise ValueError(
+                    "Una compra necesita una cotizacion relacionada"
+                )
+            if self.monto_final <= 0:
+                raise ValueError(
+                    "El monto final debe ser mayor a cero"
+                )
+            self.motivo_perdida = None
+        else:
+            if not self.motivo_perdida:
+                raise ValueError(
+                    "Indica el motivo por el que no compro"
+                )
+            self.id_cliente = None
+            self.monto_final = Decimal("0")
+
+        return self
+
+
+@app.post("/api/crm/oportunidades/{id_oportunidad}/cerrar")
+def cerrar_oportunidad_crm(
+    id_oportunidad: int,
+    cierre: CierreNegociacionCRMSchema
+):
+    return database.cerrar_negociacion_crm(
+        id_oportunidad=id_oportunidad,
+        datos=cierre.model_dump(mode="json")
+    )
+
+
+@app.get("/api/crm/negociaciones/{id_empresa}")
+def listar_negociaciones_cerradas_crm(id_empresa: int):
+    return database.obtener_negociaciones_cerradas_crm(id_empresa)
+
+
+@app.get("/api/crm/dashboard/{id_empresa}")
+def consultar_dashboard_comercial(id_empresa: int):
+    return database.obtener_dashboard_comercial(id_empresa)
+
 class ProveedorSchema(BaseModel):
     id_empresa: int
     nombre: str
@@ -394,6 +813,49 @@ def editar_fecha_movimiento_cxc(datos: FechaMovimientoCXCSchema):
         fecha=datos.fecha
     )
 
+
+@app.get("/api/finanzas/dashboard/{id_empresa}")
+def consultar_dashboard_financiero(id_empresa: int):
+    datos = database.obtener_dashboard_financiero(id_empresa)
+    if datos is None:
+        return {
+            "status": "error",
+            "mensaje": "No se pudo calcular el dashboard financiero",
+            "data": None
+        }
+    return {"status": "success", "data": datos}
+
+@app.get("/api/finanzas/ingresos/{id_empresa}")
+def consultar_analisis_ingresos(
+    id_empresa: int,
+    fecha_inicio: Optional[date] = None,
+    fecha_fin: Optional[date] = None
+):
+    datos = database.obtener_datos_analisis_ingresos(
+        id_empresa=id_empresa,
+        fecha_inicio=fecha_inicio,
+        fecha_fin=fecha_fin
+    )
+
+    if datos is None:
+        return {
+            "status": "error",
+            "mensaje": "No se pudo consultar el análisis de ingresos",
+            "data": None
+        }
+
+    if datos.get("error"):
+        return {
+            "status": "error",
+            "mensaje": datos["error"],
+            "data": None
+        }
+
+    return {
+        "status": "success",
+        "data": datos
+    }
+
 class GastoManualSchema(BaseModel):
     id_empresa: int = Field(gt=0)
     categoria: str = Field(min_length=1, max_length=80)
@@ -414,6 +876,37 @@ class GastoManualSchema(BaseModel):
 
 class AnularGastoSchema(BaseModel):
     id_empresa: int = Field(gt=0)
+
+@app.get("/api/finanzas/comprobantes/{id_empresa}")
+def consultar_comprobantes_pago(
+    id_empresa: int,
+    fecha_inicio: Optional[date] = None,
+    fecha_fin: Optional[date] = None
+):
+    datos = database.obtener_comprobantes_pago(
+        id_empresa=id_empresa,
+        fecha_inicio=fecha_inicio,
+        fecha_fin=fecha_fin
+    )
+
+    if datos is None:
+        return {
+            "status": "error",
+            "mensaje": "No se pudieron consultar los comprobantes",
+            "data": None
+        }
+
+    if datos.get("error"):
+        return {
+            "status": "error",
+            "mensaje": datos["error"],
+            "data": None
+        }
+
+    return {
+        "status": "success",
+        "data": datos
+    }
 
 @app.get("/api/gastos/{id_empresa}")
 def listar_gastos(id_empresa: int):

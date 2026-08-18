@@ -1,6 +1,6 @@
 import os
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from supabase import create_client, Client
 from dotenv import load_dotenv
 
@@ -35,6 +35,17 @@ def verificar_login(usuario, password):
         if len(response.data) > 0:
             usuario_db = response.data[0]
             if usuario_db["password"] == password:
+                usuario_db.pop("password", None)
+
+                empresa = obtener_nombre_empresa(
+                    usuario_db["id_empresa"]
+                )
+                usuario_db["nombre_empresa"] = (
+                    empresa.get("nombre_empresa")
+                    if empresa.get("exito")
+                    else "Empresa sin nombre"
+                )
+
                 return {"exito": True, "datos_usuario": usuario_db}
             else:
                 return {"exito": False, "mensaje": "Contrasena incorrecta"}
@@ -43,6 +54,55 @@ def verificar_login(usuario, password):
     except Exception as e:
         print(f"Error en login: {e}")
         return {"exito": False, "mensaje": "Error de conexion"}
+
+
+def nombre_visible_empresa(registro):
+    if not registro:
+        return None
+
+    for campo in (
+        "nombre",
+        "nombre_empresa",
+        "empresa_nombre",
+        "nombre_comercial",
+        "razon_social",
+        "empresa"
+    ):
+        valor = registro.get(campo)
+        if valor is not None and str(valor).strip():
+            return str(valor).strip()
+
+    return None
+
+
+def obtener_nombre_empresa(id_empresa):
+    try:
+        response = supabase.table("empresas") \
+            .select("*") \
+            .eq("id_empresa", id_empresa) \
+            .limit(1) \
+            .execute()
+
+        if not response.data:
+            return {
+                "exito": False,
+                "mensaje": "Empresa no encontrada"
+            }
+
+        nombre = nombre_visible_empresa(response.data[0])
+        if not nombre:
+            nombre = "Empresa sin nombre"
+
+        return {
+            "exito": True,
+            "nombre_empresa": nombre
+        }
+    except Exception as e:
+        print(f"Error al obtener el nombre de la empresa: {e}")
+        return {
+            "exito": False,
+            "mensaje": "No se pudo consultar la empresa"
+        }
 
 # --- INVENTARIO Y PRODUCTOS ---
 def crear_producto(datos_producto):
@@ -337,6 +397,873 @@ def cambiar_estado_cliente(id_cliente, id_empresa, activo):
         print(f"Error al cambiar el estado del cliente: {e}")
         return {"exito": False, "mensaje": "No se pudo cambiar el estado del cliente"}
 
+
+# --- CRM: PROSPECTOS ---
+def obtener_prospectos(id_empresa):
+    try:
+        response = supabase.table("prospectos") \
+            .select("*") \
+            .eq("id_empresa", id_empresa) \
+            .order("fecha_actualizacion", desc=True) \
+            .execute()
+        return response.data
+    except Exception as e:
+        print(f"Error al obtener prospectos: {e}")
+        return None
+
+
+def crear_prospecto(datos_prospecto):
+    try:
+        response = supabase.table("prospectos") \
+            .insert(datos_prospecto) \
+            .execute()
+
+        prospecto = response.data[0] if response.data else None
+        return {
+            "exito": True,
+            "mensaje": "Prospecto registrado exitosamente",
+            "data": prospecto
+        }
+    except Exception as e:
+        texto_error = str(e).lower()
+        print(f"Error al crear prospecto: {e}")
+
+        if "prospectos_seguimiento_activo_requerido" in texto_error:
+            mensaje = "Indica el próximo seguimiento del prospecto"
+        elif "prospectos_motivo_descarte_requerido" in texto_error:
+            mensaje = "Indica el motivo de descarte"
+        elif "prospectos_contacto_empresa_valido" in texto_error:
+            mensaje = "El contacto principal solo corresponde a empresas"
+        else:
+            mensaje = "No se pudo guardar el prospecto"
+
+        return {"exito": False, "mensaje": mensaje}
+
+
+def actualizar_prospecto(
+    id_prospecto,
+    id_empresa,
+    datos_prospecto
+):
+    try:
+        prospecto_actual = supabase.table("prospectos") \
+            .select("id_prospecto, estatus") \
+            .eq("id_prospecto", id_prospecto) \
+            .eq("id_empresa", id_empresa) \
+            .limit(1) \
+            .execute()
+
+        if not prospecto_actual.data:
+            return {
+                "exito": False,
+                "mensaje": "Prospecto no encontrado"
+            }
+
+        if prospecto_actual.data[0].get("estatus") == "Convertido":
+            return {
+                "exito": False,
+                "mensaje": (
+                    "Un prospecto convertido debe administrarse "
+                    "desde su negociación"
+                )
+            }
+
+        response = supabase.table("prospectos") \
+            .update(datos_prospecto) \
+            .eq("id_prospecto", id_prospecto) \
+            .eq("id_empresa", id_empresa) \
+            .execute()
+
+        prospecto = response.data[0] if response.data else None
+        return {
+            "exito": True,
+            "mensaje": "Prospecto actualizado exitosamente",
+            "data": prospecto
+        }
+    except Exception as e:
+        texto_error = str(e).lower()
+        print(f"Error al actualizar prospecto: {e}")
+
+        if "prospectos_seguimiento_activo_requerido" in texto_error:
+            mensaje = "Indica el próximo seguimiento del prospecto"
+        elif "prospectos_motivo_descarte_requerido" in texto_error:
+            mensaje = "Indica el motivo de descarte"
+        elif "prospectos_contacto_empresa_valido" in texto_error:
+            mensaje = "El contacto principal solo corresponde a empresas"
+        else:
+            mensaje = "No se pudo actualizar el prospecto"
+
+        return {"exito": False, "mensaje": mensaje}
+
+
+def obtener_seguimientos_prospecto(id_prospecto, id_empresa):
+    try:
+        prospecto = supabase.table("prospectos") \
+            .select("id_prospecto") \
+            .eq("id_prospecto", id_prospecto) \
+            .eq("id_empresa", id_empresa) \
+            .limit(1) \
+            .execute()
+
+        if not prospecto.data:
+            return {
+                "exito": False,
+                "mensaje": "Prospecto no encontrado",
+                "data": []
+            }
+
+        response = supabase.table("seguimientos_prospectos") \
+            .select("*") \
+            .eq("id_prospecto", id_prospecto) \
+            .eq("id_empresa", id_empresa) \
+            .order("fecha_seguimiento", desc=True) \
+            .order("id_seguimiento", desc=True) \
+            .execute()
+
+        return {
+            "exito": True,
+            "mensaje": "Seguimientos consultados",
+            "data": response.data or []
+        }
+    except Exception as e:
+        print(f"Error al obtener seguimientos del prospecto: {e}")
+        return {
+            "exito": False,
+            "mensaje": "No se pudieron consultar los seguimientos",
+            "data": []
+        }
+
+
+def registrar_seguimiento_prospecto(
+    id_prospecto,
+    datos_seguimiento
+):
+    try:
+        parametros = {
+            "p_id_empresa": datos_seguimiento["id_empresa"],
+            "p_id_prospecto": id_prospecto,
+            "p_id_usuario": datos_seguimiento["id_usuario"],
+            "p_tipo": datos_seguimiento["tipo"],
+            "p_fecha_seguimiento": datos_seguimiento[
+                "fecha_seguimiento"
+            ],
+            "p_resultado": datos_seguimiento["resultado"],
+            "p_comentarios": datos_seguimiento["comentarios"],
+            "p_proxima_accion": datos_seguimiento.get(
+                "proxima_accion"
+            ),
+            "p_proximo_seguimiento": datos_seguimiento.get(
+                "proximo_seguimiento"
+            ),
+            "p_estatus_nuevo": datos_seguimiento[
+                "estatus_nuevo"
+            ],
+            "p_motivo_descarte": datos_seguimiento.get(
+                "motivo_descarte"
+            )
+        }
+
+        response = supabase.rpc(
+            "bizpilot_registrar_seguimiento_prospecto",
+            parametros
+        ).execute()
+
+        registro = response.data
+        if isinstance(registro, list):
+            registro = registro[0] if registro else None
+
+        return {
+            "exito": True,
+            "mensaje": "Seguimiento registrado exitosamente",
+            "data": registro
+        }
+    except Exception as e:
+        texto_error = str(e).lower()
+        print(f"Error al registrar seguimiento: {e}")
+
+        if "prospecto no encontrado" in texto_error:
+            mensaje = "Prospecto no encontrado"
+        elif "usuario no valido" in texto_error:
+            mensaje = "El usuario no pertenece a esta empresa"
+        elif "convertido" in texto_error:
+            mensaje = (
+                "El prospecto convertido se administra "
+                "desde Negociaciones"
+            )
+        elif "motivo de descarte" in texto_error:
+            mensaje = "Indica el motivo de descarte"
+        elif "proxima accion" in texto_error:
+            mensaje = "Indica la proxima accion"
+        elif "proximo seguimiento" in texto_error:
+            mensaje = "Indica el proximo seguimiento"
+        else:
+            mensaje = "No se pudo registrar el seguimiento"
+
+        return {"exito": False, "mensaje": mensaje}
+
+
+# --- CRM: EMBUDO Y COTIZACIONES ---
+def obtener_embudo_crm(id_empresa):
+    try:
+        oportunidades_response = supabase.table(
+            "oportunidades_crm"
+        ).select("*") \
+            .eq("id_empresa", id_empresa) \
+            .eq("estado", "Activa") \
+            .order("fecha_actualizacion", desc=True) \
+            .execute()
+
+        oportunidades = oportunidades_response.data or []
+
+        prospectos_response = supabase.table("prospectos") \
+            .select(
+                "id_prospecto, tipo_prospecto, nombre, "
+                "contacto_principal, telefono, email, "
+                "interes_en, estatus, proximo_seguimiento"
+            ) \
+            .eq("id_empresa", id_empresa) \
+            .eq("estatus", "Calificado") \
+            .order("fecha_actualizacion", desc=True) \
+            .execute()
+
+        prospectos_calificados = prospectos_response.data or []
+
+        ids_prospectos = list({
+            int(item["id_prospecto"])
+            for item in oportunidades
+            if item.get("id_prospecto") is not None
+        })
+
+        prospectos_oportunidad = []
+        seguimientos = []
+
+        if ids_prospectos:
+            prospectos_oportunidad = supabase.table("prospectos") \
+                .select(
+                    "id_prospecto, tipo_prospecto, nombre, "
+                    "contacto_principal, telefono, email, "
+                    "interes_en, estatus, proximo_seguimiento"
+                ) \
+                .eq("id_empresa", id_empresa) \
+                .in_("id_prospecto", ids_prospectos) \
+                .execute().data or []
+
+            seguimientos = supabase.table(
+                "seguimientos_prospectos"
+            ).select(
+                "id_seguimiento, id_prospecto, proxima_accion, "
+                "proximo_seguimiento, fecha_seguimiento"
+            ).eq("id_empresa", id_empresa) \
+                .in_("id_prospecto", ids_prospectos) \
+                .order("fecha_seguimiento", desc=True) \
+                .order("id_seguimiento", desc=True) \
+                .execute().data or []
+
+        ids_oportunidades = [
+            int(item["id_oportunidad"])
+            for item in oportunidades
+        ]
+
+        cotizaciones = []
+        detalles = []
+
+        if ids_oportunidades:
+            cotizaciones = supabase.table("cotizaciones_crm") \
+                .select("*") \
+                .eq("id_empresa", id_empresa) \
+                .in_("id_oportunidad", ids_oportunidades) \
+                .order("version", desc=True) \
+                .execute().data or []
+
+            ids_cotizaciones = [
+                int(item["id_cotizacion"])
+                for item in cotizaciones
+            ]
+
+            if ids_cotizaciones:
+                detalles = supabase.table(
+                    "cotizaciones_detalle_crm"
+                ).select("*") \
+                    .eq("id_empresa", id_empresa) \
+                    .in_("id_cotizacion", ids_cotizaciones) \
+                    .order("orden") \
+                    .execute().data or []
+
+        mapa_prospectos = {
+            int(item["id_prospecto"]): item
+            for item in prospectos_oportunidad
+        }
+
+        mapa_seguimientos = {}
+        for item in seguimientos:
+            id_prospecto = int(item["id_prospecto"])
+            if id_prospecto not in mapa_seguimientos:
+                mapa_seguimientos[id_prospecto] = item
+
+        detalles_por_cotizacion = {}
+        for item in detalles:
+            id_cotizacion = int(item["id_cotizacion"])
+            detalles_por_cotizacion.setdefault(
+                id_cotizacion,
+                []
+            ).append(item)
+
+        cotizaciones_por_oportunidad = {}
+        for item in cotizaciones:
+            id_cotizacion = int(item["id_cotizacion"])
+            id_oportunidad = int(item["id_oportunidad"])
+            item["partidas"] = detalles_por_cotizacion.get(
+                id_cotizacion,
+                []
+            )
+            cotizaciones_por_oportunidad.setdefault(
+                id_oportunidad,
+                []
+            ).append(item)
+
+        for oportunidad in oportunidades:
+            id_oportunidad = int(oportunidad["id_oportunidad"])
+            id_prospecto = int(oportunidad["id_prospecto"])
+            versiones = cotizaciones_por_oportunidad.get(
+                id_oportunidad,
+                []
+            )
+
+            oportunidad["prospecto"] = mapa_prospectos.get(
+                id_prospecto
+            )
+            oportunidad["ultimo_seguimiento"] = (
+                mapa_seguimientos.get(id_prospecto)
+            )
+            oportunidad["cotizaciones"] = versiones
+            oportunidad["cotizacion_actual"] = (
+                next(
+                    (
+                        item for item in versiones
+                        if item.get("estado") != "Sustituida"
+                    ),
+                    versiones[0] if versiones else None
+                )
+            )
+
+        return {
+            "exito": True,
+            "mensaje": "Embudo consultado",
+            "data": {
+                "oportunidades": oportunidades,
+                "prospectos_calificados": prospectos_calificados
+            }
+        }
+    except Exception as e:
+        print(f"Error al obtener el embudo CRM: {e}")
+        return {
+            "exito": False,
+            "mensaje": "No se pudo consultar el embudo",
+            "data": {
+                "oportunidades": [],
+                "prospectos_calificados": []
+            }
+        }
+
+
+def crear_oportunidad_crm(datos):
+    try:
+        parametros = {
+            "p_id_empresa": datos["id_empresa"],
+            "p_id_prospecto": datos["id_prospecto"],
+            "p_id_usuario": datos["id_usuario"],
+            "p_titulo": datos["titulo"],
+            "p_etapa": datos["etapa"],
+            "p_valor_estimado": datos["valor_estimado"],
+            "p_probabilidad": datos["probabilidad"],
+            "p_notas": datos.get("notas")
+        }
+
+        response = supabase.rpc(
+            "bizpilot_crear_oportunidad_crm",
+            parametros
+        ).execute()
+
+        registro = response.data
+        if isinstance(registro, list):
+            registro = registro[0] if registro else None
+
+        return {
+            "exito": True,
+            "mensaje": "Oportunidad creada exitosamente",
+            "data": registro
+        }
+    except Exception as e:
+        return error_oportunidad_crm(
+            e,
+            "No se pudo crear la oportunidad"
+        )
+
+
+def actualizar_oportunidad_crm(id_oportunidad, datos):
+    try:
+        parametros = {
+            "p_id_empresa": datos["id_empresa"],
+            "p_id_oportunidad": id_oportunidad,
+            "p_id_usuario": datos["id_usuario"],
+            "p_titulo": datos["titulo"],
+            "p_etapa": datos["etapa"],
+            "p_valor_estimado": datos["valor_estimado"],
+            "p_probabilidad": datos["probabilidad"],
+            "p_notas": datos.get("notas")
+        }
+
+        response = supabase.rpc(
+            "bizpilot_actualizar_oportunidad_crm",
+            parametros
+        ).execute()
+
+        registro = response.data
+        if isinstance(registro, list):
+            registro = registro[0] if registro else None
+
+        return {
+            "exito": True,
+            "mensaje": "Oportunidad actualizada exitosamente",
+            "data": registro
+        }
+    except Exception as e:
+        return error_oportunidad_crm(
+            e,
+            "No se pudo actualizar la oportunidad"
+        )
+
+
+def error_oportunidad_crm(error, mensaje_predeterminado):
+    texto_error = str(error).lower()
+    print(f"Error en oportunidad CRM: {error}")
+
+    if "solo un prospecto calificado" in texto_error:
+        mensaje = "El prospecto debe estar Calificado"
+    elif "ya tiene una oportunidad activa" in texto_error:
+        mensaje = "El prospecto ya esta dentro del embudo"
+    elif "prospecto no encontrado" in texto_error:
+        mensaje = "Prospecto no encontrado"
+    elif "usuario no valido" in texto_error:
+        mensaje = "El usuario no pertenece a esta empresa"
+    elif "oportunidad activa no encontrada" in texto_error:
+        mensaje = "Oportunidad activa no encontrada"
+    else:
+        mensaje = mensaje_predeterminado
+
+    return {"exito": False, "mensaje": mensaje}
+
+
+def crear_cotizacion_crm(id_oportunidad, datos):
+    try:
+        parametros = {
+            "p_id_empresa": datos["id_empresa"],
+            "p_id_oportunidad": id_oportunidad,
+            "p_id_usuario": datos["id_usuario"],
+            "p_estado": datos["estado"],
+            "p_vigencia_hasta": datos["vigencia_hasta"],
+            "p_descuento_porcentaje": datos[
+                "descuento_porcentaje"
+            ],
+            "p_impuesto_porcentaje": datos[
+                "impuesto_porcentaje"
+            ],
+            "p_notas": datos.get("notas"),
+            "p_partidas": datos["partidas"]
+        }
+
+        response = supabase.rpc(
+            "bizpilot_crear_cotizacion_crm",
+            parametros
+        ).execute()
+
+        registro = response.data
+        if isinstance(registro, list):
+            registro = registro[0] if registro else None
+
+        return {
+            "exito": True,
+            "mensaje": "Cotizacion guardada exitosamente",
+            "data": registro
+        }
+    except Exception as e:
+        texto_error = str(e).lower()
+        print(f"Error al crear cotizacion CRM: {e}")
+
+        if "oportunidad activa no encontrada" in texto_error:
+            mensaje = "Oportunidad activa no encontrada"
+        elif "usuario no valido" in texto_error:
+            mensaje = "El usuario no pertenece a esta empresa"
+        elif "al menos una partida" in texto_error:
+            mensaje = "Agrega al menos una partida"
+        elif "vigencia" in texto_error:
+            mensaje = "Indica la vigencia de la cotizacion"
+        elif "porcentajes" in texto_error:
+            mensaje = "Revisa descuento e impuesto"
+        elif "concepto" in texto_error:
+            mensaje = "Cada partida necesita un concepto"
+        elif "cantidad" in texto_error:
+            mensaje = "La cantidad debe ser mayor a cero"
+        elif "precio" in texto_error:
+            mensaje = "El precio no puede ser negativo"
+        else:
+            mensaje = "No se pudo guardar la cotizacion"
+
+        return {"exito": False, "mensaje": mensaje}
+
+
+# --- CRM: NEGOCIACIONES CERRADAS Y DASHBOARD ---
+def cerrar_negociacion_crm(id_oportunidad, datos):
+    try:
+        parametros = {
+            "p_id_empresa": datos["id_empresa"],
+            "p_id_oportunidad": id_oportunidad,
+            "p_id_usuario": datos["id_usuario"],
+            "p_resultado": datos["resultado"],
+            "p_id_cotizacion": datos.get("id_cotizacion"),
+            "p_id_cliente": datos.get("id_cliente"),
+            "p_monto_final": datos["monto_final"],
+            "p_motivo_perdida": datos.get("motivo_perdida"),
+            "p_notas": datos.get("notas"),
+            "p_fecha_cierre": datos["fecha_cierre"]
+        }
+
+        response = supabase.rpc(
+            "bizpilot_cerrar_negociacion_crm",
+            parametros
+        ).execute()
+
+        registro = response.data
+        if isinstance(registro, list):
+            registro = registro[0] if registro else None
+
+        return {
+            "exito": True,
+            "mensaje": "Negociacion cerrada exitosamente",
+            "data": registro
+        }
+    except Exception as e:
+        texto_error = str(e).lower()
+        print(f"Error al cerrar negociacion CRM: {e}")
+
+        if "oportunidad activa no encontrada" in texto_error:
+            mensaje = "Oportunidad activa no encontrada"
+        elif "ya tiene una negociacion cerrada" in texto_error:
+            mensaje = "La oportunidad ya fue cerrada"
+        elif "usuario no valido" in texto_error:
+            mensaje = "El usuario no pertenece a esta empresa"
+        elif "necesita una cotizacion" in texto_error:
+            mensaje = "Una compra necesita una cotizacion"
+        elif "cotizacion no pertenece" in texto_error:
+            mensaje = "La cotizacion no pertenece a la oportunidad"
+        elif "monto final" in texto_error:
+            mensaje = "El monto final debe ser mayor a cero"
+        elif "motivo" in texto_error:
+            mensaje = "Indica el motivo de perdida"
+        elif "cliente seleccionado" in texto_error:
+            mensaje = "El cliente seleccionado no es valido"
+        elif "fecha de cierre" in texto_error:
+            mensaje = "La fecha de cierre no puede estar en el futuro"
+        else:
+            mensaje = "No se pudo cerrar la negociacion"
+
+        return {"exito": False, "mensaje": mensaje}
+
+
+def obtener_negociaciones_cerradas_crm(id_empresa):
+    try:
+        response = supabase.table("negociaciones_cerradas_crm") \
+            .select("*") \
+            .eq("id_empresa", id_empresa) \
+            .order("fecha_cierre", desc=True) \
+            .order("id_negociacion", desc=True) \
+            .execute()
+
+        negociaciones = response.data or []
+        if not negociaciones:
+            return {
+                "exito": True,
+                "mensaje": "No hay negociaciones cerradas",
+                "data": []
+            }
+
+        ids_prospectos = list({
+            int(item["id_prospecto"])
+            for item in negociaciones
+        })
+        ids_oportunidades = list({
+            int(item["id_oportunidad"])
+            for item in negociaciones
+        })
+        ids_cotizaciones = list({
+            int(item["id_cotizacion"])
+            for item in negociaciones
+            if item.get("id_cotizacion") is not None
+        })
+        ids_clientes = list({
+            int(item["id_cliente"])
+            for item in negociaciones
+            if item.get("id_cliente") is not None
+        })
+
+        prospectos = supabase.table("prospectos") \
+            .select(
+                "id_prospecto, tipo_prospecto, nombre, "
+                "contacto_principal, telefono, email, "
+                "interes_en, estatus"
+            ) \
+            .eq("id_empresa", id_empresa) \
+            .in_("id_prospecto", ids_prospectos) \
+            .execute().data or []
+
+        oportunidades = supabase.table("oportunidades_crm") \
+            .select(
+                "id_oportunidad, titulo, etapa, "
+                "valor_estimado, probabilidad, estado"
+            ) \
+            .eq("id_empresa", id_empresa) \
+            .in_("id_oportunidad", ids_oportunidades) \
+            .execute().data or []
+
+        cotizaciones = []
+        if ids_cotizaciones:
+            cotizaciones = supabase.table("cotizaciones_crm") \
+                .select(
+                    "id_cotizacion, folio, version, estado, "
+                    "vigencia_hasta, subtotal, descuento, "
+                    "impuesto, total"
+                ) \
+                .eq("id_empresa", id_empresa) \
+                .in_("id_cotizacion", ids_cotizaciones) \
+                .execute().data or []
+
+        clientes = []
+        if ids_clientes:
+            clientes = supabase.table("clientes") \
+                .select(
+                    "id_cliente, nombre, telefono, email, "
+                    "tipo_cliente, activo"
+                ) \
+                .eq("id_empresa", id_empresa) \
+                .in_("id_cliente", ids_clientes) \
+                .execute().data or []
+
+        mapa_prospectos = {
+            int(item["id_prospecto"]): item
+            for item in prospectos
+        }
+        mapa_oportunidades = {
+            int(item["id_oportunidad"]): item
+            for item in oportunidades
+        }
+        mapa_cotizaciones = {
+            int(item["id_cotizacion"]): item
+            for item in cotizaciones
+        }
+        mapa_clientes = {
+            int(item["id_cliente"]): item
+            for item in clientes
+        }
+
+        for negociacion in negociaciones:
+            negociacion["prospecto"] = mapa_prospectos.get(
+                int(negociacion["id_prospecto"])
+            )
+            negociacion["oportunidad"] = mapa_oportunidades.get(
+                int(negociacion["id_oportunidad"])
+            )
+            negociacion["cotizacion"] = (
+                mapa_cotizaciones.get(int(negociacion["id_cotizacion"]))
+                if negociacion.get("id_cotizacion") is not None
+                else None
+            )
+            negociacion["cliente"] = (
+                mapa_clientes.get(int(negociacion["id_cliente"]))
+                if negociacion.get("id_cliente") is not None
+                else None
+            )
+
+        return {
+            "exito": True,
+            "mensaje": "Negociaciones consultadas",
+            "data": negociaciones
+        }
+    except Exception as e:
+        print(f"Error al consultar negociaciones cerradas: {e}")
+        return {
+            "exito": False,
+            "mensaje": "No se pudieron consultar las negociaciones",
+            "data": []
+        }
+
+
+def convertir_fecha_hora_crm(valor):
+    if not valor:
+        return None
+
+    try:
+        fecha = datetime.fromisoformat(
+            str(valor).replace("Z", "+00:00")
+        )
+        if fecha.tzinfo is None:
+            fecha = fecha.replace(tzinfo=timezone.utc)
+        return fecha.astimezone(timezone.utc)
+    except (TypeError, ValueError):
+        return None
+
+
+def obtener_dashboard_comercial(id_empresa):
+    try:
+        prospectos = supabase.table("prospectos") \
+            .select(
+                "id_prospecto, nombre, tipo_prospecto, estatus, "
+                "interes_en, proximo_seguimiento"
+            ) \
+            .eq("id_empresa", id_empresa) \
+            .order("proximo_seguimiento") \
+            .execute().data or []
+
+        oportunidades = supabase.table("oportunidades_crm") \
+            .select(
+                "id_oportunidad, id_prospecto, titulo, etapa, "
+                "valor_estimado, probabilidad, fecha_actualizacion"
+            ) \
+            .eq("id_empresa", id_empresa) \
+            .eq("estado", "Activa") \
+            .execute().data or []
+
+        cotizaciones_enviadas = supabase.table("cotizaciones_crm") \
+            .select("id_cotizacion") \
+            .eq("id_empresa", id_empresa) \
+            .eq("estado", "Enviada") \
+            .execute().data or []
+
+        resultado_negociaciones = obtener_negociaciones_cerradas_crm(
+            id_empresa
+        )
+        if not resultado_negociaciones.get("exito"):
+            raise RuntimeError(
+                resultado_negociaciones.get("mensaje")
+                or "No se pudieron consultar los cierres"
+            )
+
+        negociaciones = resultado_negociaciones.get("data") or []
+        estados_activos = {"Nuevo", "Contactado", "Calificado"}
+        prospectos_activos = [
+            item for item in prospectos
+            if item.get("estatus") in estados_activos
+        ]
+
+        ahora = datetime.now(timezone.utc)
+        hoy = ahora.date()
+        seguimientos_vencidos = []
+        seguimientos_hoy = []
+
+        for prospecto in prospectos_activos:
+            fecha = convertir_fecha_hora_crm(
+                prospecto.get("proximo_seguimiento")
+            )
+            if not fecha:
+                continue
+            if fecha < ahora:
+                seguimientos_vencidos.append(prospecto)
+            if fecha.date() == hoy:
+                seguimientos_hoy.append(prospecto)
+
+        seguimientos_vencidos.sort(
+            key=lambda item: item.get("proximo_seguimiento") or ""
+        )
+
+        valor_embudo = sum(
+            float(item.get("valor_estimado") or 0)
+            for item in oportunidades
+        )
+        valor_ponderado = sum(
+            float(item.get("valor_estimado") or 0)
+            * float(item.get("probabilidad") or 0)
+            / 100
+            for item in oportunidades
+        )
+
+        ganadas = [
+            item for item in negociaciones
+            if item.get("resultado") == "Compro"
+        ]
+        perdidas = [
+            item for item in negociaciones
+            if item.get("resultado") == "No compro"
+        ]
+        total_cierres = len(negociaciones)
+        tasa_conversion = (
+            len(ganadas) * 100 / total_cierres
+            if total_cierres
+            else 0
+        )
+        monto_ganado = sum(
+            float(item.get("monto_final") or 0)
+            for item in ganadas
+        )
+
+        etapas = {
+            "Interes detectado": 0,
+            "Preparando cotizacion": 0,
+            "Cotizacion enviada": 0,
+            "En revision": 0,
+            "Esperando decision": 0
+        }
+        for oportunidad in oportunidades:
+            etapa = oportunidad.get("etapa")
+            if etapa in etapas:
+                etapas[etapa] += 1
+
+        motivos_perdida = {}
+        for item in perdidas:
+            motivo = item.get("motivo_perdida") or "Sin motivo"
+            motivos_perdida[motivo] = motivos_perdida.get(motivo, 0) + 1
+
+        motivos_ordenados = [
+            {"motivo": motivo, "cantidad": cantidad}
+            for motivo, cantidad in sorted(
+                motivos_perdida.items(),
+                key=lambda item: (-item[1], item[0])
+            )
+        ]
+
+        return {
+            "exito": True,
+            "mensaje": "Dashboard comercial consultado",
+            "data": {
+                "resumen": {
+                    "prospectos_activos": len(prospectos_activos),
+                    "seguimientos_vencidos": len(
+                        seguimientos_vencidos
+                    ),
+                    "seguimientos_hoy": len(seguimientos_hoy),
+                    "oportunidades_activas": len(oportunidades),
+                    "valor_embudo": round(valor_embudo, 2),
+                    "valor_ponderado": round(valor_ponderado, 2),
+                    "cotizaciones_enviadas": len(
+                        cotizaciones_enviadas
+                    ),
+                    "cierres_ganados": len(ganadas),
+                    "cierres_perdidos": len(perdidas),
+                    "tasa_conversion": round(tasa_conversion, 2),
+                    "monto_ganado": round(monto_ganado, 2)
+                },
+                "etapas": etapas,
+                "seguimientos_vencidos": seguimientos_vencidos[:10],
+                "cierres_recientes": negociaciones[:10],
+                "motivos_perdida": motivos_ordenados[:8]
+            }
+        }
+    except Exception as e:
+        print(f"Error al consultar Dashboard comercial: {e}")
+        return {
+            "exito": False,
+            "mensaje": "No se pudo consultar el Dashboard comercial",
+            "data": None
+        }
+
 # --- PROVEEDORES ---
 def obtener_proveedores(id_empresa):
     try:
@@ -566,6 +1493,233 @@ def obtener_gastos(id_empresa):
         print(f"Error al obtener gastos: {e}")
         return None
 
+
+_ZONA_HORARIA_NEGOCIO = timezone(timedelta(hours=-6))
+
+
+def _fecha_local_finanzas(valor):
+    """Convierte fechas de Supabase a la fecha operativa de Monterrey."""
+    if valor is None or valor == "":
+        return None
+
+    if isinstance(valor, datetime):
+        fecha_hora = valor
+    elif isinstance(valor, date):
+        return valor
+    else:
+        texto = str(valor).strip()
+        if len(texto) == 10:
+            try:
+                return date.fromisoformat(texto)
+            except ValueError:
+                return None
+
+        try:
+            fecha_hora = datetime.fromisoformat(texto.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+
+    if fecha_hora.tzinfo is not None:
+        fecha_hora = fecha_hora.astimezone(_ZONA_HORARIA_NEGOCIO)
+
+    return fecha_hora.date()
+
+
+def _mover_mes(fecha_base, cantidad_meses):
+    indice_mes = fecha_base.year * 12 + fecha_base.month - 1 + cantidad_meses
+    return date(indice_mes // 12, indice_mes % 12 + 1, 1)
+
+
+def obtener_dashboard_financiero(id_empresa):
+    """Resume ventas y gastos sin volver a contar los abonos de CxC como ventas."""
+    try:
+        hoy = datetime.now(_ZONA_HORARIA_NEGOCIO).date()
+        inicio_mes_actual = date(hoy.year, hoy.month, 1)
+        inicio_diario = hoy - timedelta(days=29)
+        inicio_mensual = _mover_mes(inicio_mes_actual, -11)
+
+        respuesta_ventas = supabase.table("ventas") \
+            .select("id_venta,total,fecha") \
+            .eq("id_empresa", id_empresa) \
+            .gte("fecha", inicio_mensual.isoformat()) \
+            .execute()
+
+        movimientos_gastos = obtener_gastos(id_empresa)
+        if movimientos_gastos is None:
+            return None
+
+        dias = [inicio_diario + timedelta(days=indice) for indice in range(30)]
+        meses = [_mover_mes(inicio_mensual, indice) for indice in range(12)]
+
+        diario = {
+            dia.isoformat(): {"ingresos": 0.0, "gastos": 0.0}
+            for dia in dias
+        }
+        mensual = {
+            mes.strftime("%Y-%m"): {"ingresos": 0.0, "gastos": 0.0}
+            for mes in meses
+        }
+
+        ingresos_mes_actual = 0.0
+        gastos_mes_actual = 0.0
+
+        for venta in respuesta_ventas.data or []:
+            fecha_venta = _fecha_local_finanzas(venta.get("fecha"))
+            if fecha_venta is None or fecha_venta > hoy:
+                continue
+
+            monto = float(venta.get("total") or 0)
+            clave_dia = fecha_venta.isoformat()
+            clave_mes = fecha_venta.strftime("%Y-%m")
+
+            if clave_dia in diario:
+                diario[clave_dia]["ingresos"] += monto
+            if clave_mes in mensual:
+                mensual[clave_mes]["ingresos"] += monto
+            if fecha_venta >= inicio_mes_actual:
+                ingresos_mes_actual += monto
+
+        for movimiento in movimientos_gastos:
+            fecha_gasto = _fecha_local_finanzas(movimiento.get("fecha"))
+            if fecha_gasto is None or fecha_gasto > hoy:
+                continue
+
+            monto = float(movimiento.get("monto") or 0)
+            clave_dia = fecha_gasto.isoformat()
+            clave_mes = fecha_gasto.strftime("%Y-%m")
+
+            if clave_dia in diario:
+                diario[clave_dia]["gastos"] += monto
+            if clave_mes in mensual:
+                mensual[clave_mes]["gastos"] += monto
+            if fecha_gasto >= inicio_mes_actual:
+                gastos_mes_actual += monto
+
+        def construir_serie(agrupacion):
+            serie = []
+            for periodo, importes in agrupacion.items():
+                ingresos = round(importes["ingresos"], 2)
+                gastos = round(importes["gastos"], 2)
+                serie.append({
+                    "periodo": periodo,
+                    "ingresos": ingresos,
+                    "gastos": gastos,
+                    "utilidad_neta": round(ingresos - gastos, 2)
+                })
+            return serie
+
+        ingresos_mes_actual = round(ingresos_mes_actual, 2)
+        gastos_mes_actual = round(gastos_mes_actual, 2)
+
+        return {
+            "resumen": {
+                "periodo": inicio_mes_actual.strftime("%Y-%m"),
+                "ingresos": ingresos_mes_actual,
+                "gastos": gastos_mes_actual,
+                "utilidad_neta": round(
+                    ingresos_mes_actual - gastos_mes_actual,
+                    2
+                )
+            },
+            "diario": construir_serie(diario),
+            "mensual": construir_serie(mensual),
+            "fecha_corte": hoy.isoformat()
+        }
+    except Exception as e:
+        print(f"Error al obtener dashboard financiero: {e}")
+        return None
+
+def obtener_datos_analisis_ingresos(
+    id_empresa,
+    fecha_inicio=None,
+    fecha_fin=None
+):
+    try:
+        hoy = datetime.now(_ZONA_HORARIA_NEGOCIO).date()
+        inicio = fecha_inicio or date(hoy.year, hoy.month, 1)
+        fin = fecha_fin or hoy
+
+        if inicio > fin:
+            return {
+                "error": "La fecha inicial no puede ser posterior a la fecha final"
+            }
+
+        # Se consulta un día adicional para cubrir correctamente
+        # movimientos guardados con zona horaria UTC.
+        desde_consulta = (
+            inicio - timedelta(days=1)
+        ).isoformat()
+
+        hasta_consulta = (
+            fin + timedelta(days=2)
+        ).isoformat()
+
+        ventas_encontradas = []
+        tamano_pagina = 500
+        desde = 0
+
+        while True:
+            response = supabase.table("ventas") \
+                .select(
+                    "id_venta,id_cliente,cliente,total,metodo_pago,"
+                    "tipo_venta,monto_pagado,estado_pago,fecha,"
+                    "fecha_vencimiento,"
+                    "ventas_detalle("
+                    "id_producto,nombre_producto,tipo_item,cantidad,"
+                    "precio_unitario,subtotal,productos(nombre,sku)"
+                    "),"
+                    "pagos_cxc("
+                    "id_pago_cxc,monto,metodo_pago,descripcion,"
+                    "referencia,notas,fecha_pago,saldo_antes,"
+                    "saldo_despues"
+                    ")"
+                ) \
+                .eq("id_empresa", id_empresa) \
+                .gte("fecha", desde_consulta) \
+                .lt("fecha", hasta_consulta) \
+                .order("fecha", desc=True) \
+                .order("id_venta", desc=True) \
+                .range(
+                    desde,
+                    desde + tamano_pagina - 1
+                ) \
+                .execute()
+
+            lote = response.data or []
+            ventas_encontradas.extend(lote)
+
+            if len(lote) < tamano_pagina:
+                break
+
+            desde += tamano_pagina
+
+        ventas_filtradas = []
+
+        for venta in ventas_encontradas:
+            fecha_local = _fecha_local_finanzas(
+                venta.get("fecha")
+            )
+
+            if (
+                fecha_local is not None
+                and inicio <= fecha_local <= fin
+            ):
+                ventas_filtradas.append(venta)
+
+        return {
+            "periodo": {
+                "inicio": inicio.isoformat(),
+                "fin": fin.isoformat()
+            },
+            "ventas": ventas_filtradas
+        }
+
+    except Exception as e:
+        print(
+            f"Error al consultar datos de análisis de ingresos: {e}"
+        )
+        return None
+
 def crear_gasto_manual(datos_gasto):
     try:
         datos = {**datos_gasto, "activo": True}
@@ -745,3 +1899,199 @@ def actualizar_fecha_movimiento_cxc(
             if mensaje in texto_error:
                 return {"exito": False, "mensaje": mensaje}
         return {"exito": False, "mensaje": "No se pudo actualizar la fecha del movimiento"}
+    
+def obtener_comprobantes_pago(
+    id_empresa,
+    fecha_inicio=None,
+    fecha_fin=None
+):
+    try:
+        hoy = datetime.now(_ZONA_HORARIA_NEGOCIO).date()
+        inicio = fecha_inicio or date(hoy.year, hoy.month, 1)
+        fin = fecha_fin or hoy
+
+        if inicio > fin:
+            return {
+                "error": "La fecha inicial no puede ser posterior a la fecha final"
+            }
+
+        # Margen adicional para movimientos guardados en UTC.
+        desde_consulta = (
+            inicio - timedelta(days=1)
+        ).isoformat()
+
+        hasta_consulta = (
+            fin + timedelta(days=2)
+        ).isoformat()
+
+        tamano_pagina = 500
+
+        def consultar_paginas(
+            tabla,
+            seleccion,
+            campo_fecha,
+            campo_id
+        ):
+            registros = []
+            desde = 0
+
+            while True:
+                respuesta = supabase.table(tabla) \
+                    .select(seleccion) \
+                    .eq("id_empresa", id_empresa) \
+                    .gte(campo_fecha, desde_consulta) \
+                    .lt(campo_fecha, hasta_consulta) \
+                    .order(campo_fecha, desc=True) \
+                    .order(campo_id, desc=True) \
+                    .range(
+                        desde,
+                        desde + tamano_pagina - 1
+                    ) \
+                    .execute()
+
+                lote = respuesta.data or []
+                registros.extend(lote)
+
+                if len(lote) < tamano_pagina:
+                    break
+
+                desde += tamano_pagina
+
+            return registros
+
+        # Ventas del periodo: solamente las de contado
+        # podrán generar comprobantes directos de venta.
+        ventas = consultar_paginas(
+            tabla="ventas",
+            seleccion=(
+                "id_venta,id_empresa,id_cliente,cliente,total,"
+                "metodo_pago,tipo_venta,monto_pagado,"
+                "estado_pago,fecha,fecha_vencimiento,"
+                "ventas_detalle("
+                "id_producto,nombre_producto,tipo_item,"
+                "cantidad,precio_unitario,subtotal,"
+                "productos(nombre,sku)"
+                ")"
+            ),
+            campo_fecha="fecha",
+            campo_id="id_venta"
+        )
+
+        # Los anticipos y abonos se consultan por fecha de pago,
+        # aunque la venta original pertenezca a otro periodo.
+        pagos_cxc = consultar_paginas(
+            tabla="pagos_cxc",
+            seleccion=(
+                "id_pago_cxc,id_empresa,id_venta,monto,"
+                "metodo_pago,descripcion,referencia,notas,"
+                "fecha_pago,saldo_antes,saldo_despues,"
+                "ventas("
+                "id_venta,id_cliente,cliente,total,fecha,"
+                "fecha_vencimiento,"
+                "ventas_detalle("
+                "id_producto,nombre_producto,tipo_item,"
+                "cantidad,precio_unitario,subtotal,"
+                "productos(nombre,sku)"
+                ")"
+                ")"
+            ),
+            campo_fecha="fecha_pago",
+            campo_id="id_pago_cxc"
+        )
+
+        ventas_publico_general = []
+        ventas_clientes = []
+
+        for venta in ventas:
+            fecha_local = _fecha_local_finanzas(
+                venta.get("fecha")
+            )
+
+            if (
+                fecha_local is None
+                or fecha_local < inicio
+                or fecha_local > fin
+            ):
+                continue
+
+            tipo_venta = str(
+                venta.get("tipo_venta") or ""
+            ).strip().lower()
+
+            # Las ventas a crédito no generan un comprobante
+            # directo. Sus pagos aparecen solamente en CxC.
+            if tipo_venta != "contado":
+                continue
+
+            if venta.get("id_cliente") is None:
+                ventas_publico_general.append(venta)
+            else:
+                ventas_clientes.append(venta)
+
+        abonos_cxc = []
+
+        for pago in pagos_cxc:
+            fecha_local = _fecha_local_finanzas(
+                pago.get("fecha_pago")
+            )
+
+            if (
+                fecha_local is not None
+                and inicio <= fecha_local <= fin
+            ):
+                abonos_cxc.append(pago)
+
+        importe_publico = round(sum(
+            float(venta.get("total") or 0)
+            for venta in ventas_publico_general
+        ), 2)
+
+        importe_clientes = round(sum(
+            float(venta.get("total") or 0)
+            for venta in ventas_clientes
+        ), 2)
+
+        importe_cxc = round(sum(
+            float(pago.get("monto") or 0)
+            for pago in abonos_cxc
+        ), 2)
+
+        return {
+            "periodo": {
+                "inicio": inicio.isoformat(),
+                "fin": fin.isoformat()
+            },
+            "resumen": {
+                "comprobantes_publico_general": len(
+                    ventas_publico_general
+                ),
+                "comprobantes_clientes": len(
+                    ventas_clientes
+                ),
+                "comprobantes_cxc": len(abonos_cxc),
+                "total_comprobantes": (
+                    len(ventas_publico_general)
+                    + len(ventas_clientes)
+                    + len(abonos_cxc)
+                ),
+                "importe_publico_general": importe_publico,
+                "importe_clientes": importe_clientes,
+                "importe_cxc": importe_cxc,
+                "importe_total": round(
+                    importe_publico
+                    + importe_clientes
+                    + importe_cxc,
+                    2
+                )
+            },
+            "ventas_publico_general": ventas_publico_general,
+            "ventas_clientes": ventas_clientes,
+            "abonos_cxc": abonos_cxc,
+            "fecha_corte": hoy.isoformat()
+        }
+
+    except Exception as e:
+        print(
+            f"Error al consultar comprobantes de pago: {e}"
+        )
+        return None

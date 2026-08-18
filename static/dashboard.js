@@ -33,9 +33,7 @@ const configuracionAreas = {
             'crm-dashboard',
             'crm-prospectos',
             'crm-embudo',
-            'crm-negociaciones',
-            'crm-seguimientos',
-            'crm-cotizaciones'
+            'crm-negociaciones'
         ]
     },
     rrhh: {
@@ -67,19 +65,17 @@ const configuracionModulos = {
     'erp-proveedores': { nombre: 'Proveedores', area: 'operacion', vistaId: 'vista-proveedores', alCargar: obtenerProveedoresAPI },
     'erp-clientes': { nombre: 'Clientes', area: 'operacion', vistaId: 'vista-clientes', alCargar: obtenerClientesAPI },
 
-    'fin-resumen': { nombre: 'Dashboard financiero', area: 'finanzas', vistaId: 'vista-fin-resumen' },
-    'fin-ingresos': { nombre: 'Ingresos y cobros', area: 'finanzas', vistaId: 'vista-fin-ingresos' },
+    'fin-resumen': { nombre: 'Dashboard financiero', area: 'finanzas', vistaId: 'vista-fin-resumen', alCargar: obtenerDashboardFinanciero },
+    'fin-ingresos': { nombre: 'Analisis de ingresos', area: 'finanzas', vistaId: 'vista-fin-ingresos', alCargar: obtenerAnalisisIngresos },
     'fin-gastos': { nombre: 'Gastos', area: 'finanzas', vistaId: 'vista-fin-gastos', alCargar: obtenerGastosAPI },
     'fin-cxp': { nombre: 'Cuentas por pagar', area: 'finanzas', vistaId: 'vista-fin-cxp', alCargar: obtenerCXPAPI },
     'fin-cxc': { nombre: 'Cuentas por cobrar', area: 'finanzas', vistaId: 'vista-fin-cxc', alCargar: obtenerCXCAPI },
-    'fin-comprobantes': { nombre: 'Facturas y comprobantes', area: 'finanzas', vistaId: 'vista-fin-comprobantes' },
+    'fin-comprobantes': { nombre: 'Comprobantes', area: 'finanzas', vistaId: 'vista-fin-comprobantes', alCargar: obtenerComprobantesPago },
 
-    'crm-dashboard': { nombre: 'Dashboard comercial', area: 'crm', vistaId: 'vista-crm-dashboard' },
-    'crm-prospectos': { nombre: 'Prospectos', area: 'crm', vistaId: 'vista-crm-prospectos' },
-    'crm-embudo': { nombre: 'Embudo de ventas', area: 'crm', vistaId: 'vista-crm-embudo' },
-    'crm-negociaciones': { nombre: 'Negociaciones', area: 'crm', vistaId: 'vista-crm-negociaciones' },
-    'crm-seguimientos': { nombre: 'Seguimientos', area: 'crm', vistaId: 'vista-crm-seguimientos' },
-    'crm-cotizaciones': { nombre: 'Cotizaciones', area: 'crm', vistaId: 'vista-crm-cotizaciones' },
+    'crm-dashboard': { nombre: 'Dashboard comercial', area: 'crm', vistaId: 'vista-crm-dashboard', alCargar: obtenerDashboardComercial },
+    'crm-prospectos': { nombre: 'Prospectos y seguimientos', area: 'crm', vistaId: 'vista-crm-prospectos', alCargar: obtenerProspectosAPI },
+    'crm-embudo': { nombre: 'Embudo y cotizaciones', area: 'crm', vistaId: 'vista-crm-embudo', alCargar: obtenerEmbudoCRM },
+    'crm-negociaciones': { nombre: 'Negociaciones cerradas', area: 'crm', vistaId: 'vista-crm-negociaciones', alCargar: obtenerNegociacionesCerradasCRM },
 
     'rrhh-empleados': { nombre: 'Empleados', area: 'rrhh', vistaId: 'vista-rrhh-empleados' },
     'rrhh-asistencias': { nombre: 'Asistencias', area: 'rrhh', vistaId: 'vista-rrhh-asistencias' },
@@ -103,10 +99,58 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
     }
 
-    document.getElementById('empresa-id').innerText = sesion.id_empresa;
+    mostrarNombreEmpresa(sesion);
     configurarNavegacionPrincipal();
     seleccionarArea('operacion');
 });
+
+async function mostrarNombreEmpresa(sesion) {
+    const elemento = document.getElementById('empresa-nombre');
+    if (!elemento || !sesion || !sesion.id_empresa) return;
+
+    if (Object.prototype.hasOwnProperty.call(sesion, 'password')) {
+        delete sesion.password;
+        localStorage.setItem(
+            'bizpilot_sesion',
+            JSON.stringify(sesion)
+        );
+    }
+
+    const nombreGuardado = String(
+        sesion.nombre_empresa
+        || sesion.nombre_comercial
+        || sesion.razon_social
+        || ''
+    ).trim();
+
+    elemento.textContent = nombreGuardado
+        || 'Empresa sin nombre';
+
+    try {
+        const respuesta = await fetch(
+            `/api/empresas/${sesion.id_empresa}/nombre`,
+            { cache: 'no-store' }
+        );
+        const resultado = await respuesta.json();
+
+        if (
+            !respuesta.ok
+            || !resultado.exito
+            || !resultado.nombre_empresa
+        ) {
+            return;
+        }
+
+        elemento.textContent = resultado.nombre_empresa;
+        sesion.nombre_empresa = resultado.nombre_empresa;
+        localStorage.setItem(
+            'bizpilot_sesion',
+            JSON.stringify(sesion)
+        );
+    } catch (error) {
+        console.error('Error al cargar el nombre de la empresa:', error);
+    }
+}
 
 function obtenerSesion() {
     try {
@@ -2456,8 +2500,2251 @@ async function procesarAbonoCXC() {
 }
 
 // ==========================================
+// DASHBOARD FINANCIERO
+// ==========================================
+let solicitudDashboardFinanciero = 0;
+
+function etiquetaPeriodoFinanciero(periodo, tipo) {
+    if (!periodo) return '';
+
+    const fecha = tipo === 'mes'
+        ? new Date(`${periodo}-01T00:00:00`)
+        : new Date(`${periodo}T00:00:00`);
+
+    if (Number.isNaN(fecha.getTime())) return String(periodo);
+
+    if (tipo === 'mes') {
+        return fecha.toLocaleDateString('es-MX', {
+            month: 'short',
+            year: '2-digit'
+        }).replace('.', '');
+    }
+
+    return fecha.toLocaleDateString('es-MX', {
+        day: '2-digit',
+        month: 'short'
+    }).replace('.', '');
+}
+
+function etiquetaMesCompleto(periodo) {
+    if (!periodo) return 'Mes actual';
+    const fecha = new Date(`${periodo}-01T00:00:00`);
+    if (Number.isNaN(fecha.getTime())) return 'Mes actual';
+
+    const etiqueta = fecha.toLocaleDateString('es-MX', {
+        month: 'long',
+        year: 'numeric'
+    });
+    return etiqueta.charAt(0).toUpperCase() + etiqueta.slice(1);
+}
+
+function formatearMonedaCompacta(valor) {
+    return Number(valor || 0).toLocaleString('es-MX', {
+        style: 'currency',
+        currency: 'MXN',
+        notation: 'compact',
+        maximumFractionDigits: 1
+    });
+}
+
+function actualizarResumenDashboardFinanciero(resumen) {
+    const ingresos = Number(resumen?.ingresos || 0);
+    const gastos = Number(resumen?.gastos || 0);
+    const utilidad = Number(resumen?.utilidad_neta || 0);
+
+    document.getElementById('fin-dashboard-ingresos').textContent = formatearMoneda(ingresos);
+    document.getElementById('fin-dashboard-gastos').textContent = formatearMoneda(gastos);
+    document.getElementById('fin-dashboard-utilidad').textContent = formatearMoneda(utilidad);
+    document.getElementById('fin-dashboard-periodo').textContent = etiquetaMesCompleto(resumen?.periodo);
+
+    const tarjetaUtilidad = document.getElementById('fin-dashboard-utilidad-card');
+    tarjetaUtilidad.classList.toggle('negative', utilidad < 0);
+}
+
+function renderizarGraficaFinanciera(contenedorId, datos, tipo) {
+    const contenedor = document.getElementById(contenedorId);
+    const registros = Array.isArray(datos) ? datos : [];
+    if (!contenedor) return;
+
+    const series = [
+        { clave: 'ingresos', nombre: 'Ingresos', color: '#10b981' },
+        { clave: 'gastos', nombre: 'Gastos', color: '#ef4444' },
+        { clave: 'utilidad_neta', nombre: 'Resultado neto', color: '#2563eb' }
+    ];
+
+    const valores = registros.flatMap(registro => (
+        series.map(serie => Number(registro[serie.clave] || 0))
+    ));
+    const hayMovimientos = valores.some(valor => Math.abs(valor) > 0.009);
+
+    if (registros.length === 0 || !hayMovimientos) {
+        contenedor.innerHTML = `
+            <p class="financial-chart-empty">
+                No hay ingresos ni gastos registrados en este periodo.
+            </p>
+        `;
+        return;
+    }
+
+    const margen = { superior: 24, derecho: 24, inferior: 54, izquierdo: 76 };
+    const altoGrafica = 240;
+    const alto = margen.superior + altoGrafica + margen.inferior;
+    const anchoGrupo = tipo === 'dia' ? 36 : 66;
+    const ancho = Math.max(
+        720,
+        margen.izquierdo + margen.derecho + registros.length * anchoGrupo
+    );
+    const anchoBarra = tipo === 'dia' ? 8 : 14;
+    const separacionBarras = tipo === 'dia' ? 2 : 4;
+    const anchoBarras = series.length * anchoBarra + (series.length - 1) * separacionBarras;
+
+    let maximo = Math.max(0, ...valores);
+    let minimo = Math.min(0, ...valores);
+    maximo = maximo > 0 ? maximo * 1.12 : 1;
+    minimo = minimo < 0 ? minimo * 1.12 : 0;
+    const rango = maximo - minimo || 1;
+    const anchoArea = ancho - margen.izquierdo - margen.derecho;
+
+    const posicionY = valor => (
+        margen.superior + ((maximo - valor) / rango) * altoGrafica
+    );
+    const lineaCero = posicionY(0);
+
+    const divisiones = 4;
+    const rejilla = Array.from({ length: divisiones + 1 }, (_, indice) => {
+        const proporcion = indice / divisiones;
+        const valor = maximo - rango * proporcion;
+        const y = margen.superior + altoGrafica * proporcion;
+        return `
+            <line x1="${margen.izquierdo}" y1="${y}" x2="${ancho - margen.derecho}" y2="${y}" class="financial-chart-grid-line"></line>
+            <text x="${margen.izquierdo - 10}" y="${y + 4}" text-anchor="end" class="financial-chart-axis-text">${escaparHTML(formatearMonedaCompacta(valor))}</text>
+        `;
+    }).join('');
+
+    const intervaloEtiquetas = tipo === 'dia'
+        ? Math.max(1, Math.ceil(registros.length / 7))
+        : Math.max(1, Math.ceil(registros.length / 12));
+
+    const grupos = registros.map((registro, indice) => {
+        const centro = margen.izquierdo + (indice + 0.5) * (anchoArea / registros.length);
+        const inicio = centro - anchoBarras / 2;
+        const etiqueta = etiquetaPeriodoFinanciero(registro.periodo, tipo);
+        const mostrarEtiqueta = indice % intervaloEtiquetas === 0 || indice === registros.length - 1;
+
+        const barras = series.map((serie, indiceSerie) => {
+            const valor = Number(registro[serie.clave] || 0);
+            const yValor = posicionY(valor);
+            const y = valor >= 0 ? yValor : lineaCero;
+            const alturaCalculada = Math.abs(lineaCero - yValor);
+            const altura = valor === 0 ? 0 : Math.max(alturaCalculada, 1);
+            const x = inicio + indiceSerie * (anchoBarra + separacionBarras);
+
+            return `
+                <rect x="${x}" y="${y}" width="${anchoBarra}" height="${altura}" rx="2" fill="${serie.color}" class="financial-chart-bar">
+                    <title>${escaparHTML(etiqueta)} · ${serie.nombre}: ${escaparHTML(formatearMoneda(valor))}</title>
+                </rect>
+            `;
+        }).join('');
+
+        const textoEje = mostrarEtiqueta
+            ? `<text x="${centro}" y="${alto - 20}" text-anchor="middle" class="financial-chart-axis-text">${escaparHTML(etiqueta)}</text>`
+            : '';
+
+        return barras + textoEje;
+    }).join('');
+
+    const descripcion = tipo === 'dia'
+        ? 'Ingresos, gastos y resultado neto de los últimos 30 días'
+        : 'Ingresos, gastos y resultado neto de los últimos 12 meses';
+
+    contenedor.innerHTML = `
+        <svg class="financial-chart-svg" width="${ancho}" height="${alto}" viewBox="0 0 ${ancho} ${alto}" role="img" aria-label="${descripcion}">
+            ${rejilla}
+            <line x1="${margen.izquierdo}" y1="${lineaCero}" x2="${ancho - margen.derecho}" y2="${lineaCero}" class="financial-chart-zero-line"></line>
+            ${grupos}
+        </svg>
+    `;
+}
+
+async function obtenerDashboardFinanciero() {
+    const sesion = obtenerSesion();
+    const boton = document.getElementById('btn-actualizar-dashboard-financiero');
+    const estado = document.getElementById('fin-dashboard-estado');
+    if (!sesion || !estado) return;
+
+    const numeroSolicitud = ++solicitudDashboardFinanciero;
+    if (boton) {
+        boton.disabled = true;
+        boton.textContent = 'Actualizando...';
+    }
+    estado.classList.remove('error');
+    estado.textContent = 'Calculando resumen financiero...';
+
+    try {
+        const respuesta = await fetch(`/api/finanzas/dashboard/${sesion.id_empresa}`, {
+            cache: 'no-store'
+        });
+        const resultado = await respuesta.json();
+
+        if (!respuesta.ok || resultado.status !== 'success' || !resultado.data) {
+            throw new Error(
+                mensajeErrorAPI(resultado, 'No se pudo cargar el dashboard financiero.')
+            );
+        }
+        if (numeroSolicitud !== solicitudDashboardFinanciero) return;
+
+        actualizarResumenDashboardFinanciero(resultado.data.resumen || {});
+        renderizarGraficaFinanciera(
+            'fin-dashboard-grafica-diaria',
+            resultado.data.diario,
+            'dia'
+        );
+        renderizarGraficaFinanciera(
+            'fin-dashboard-grafica-mensual',
+            resultado.data.mensual,
+            'mes'
+        );
+
+        const fechaCorte = resultado.data.fecha_corte
+            ? formatearFechaCXC(resultado.data.fecha_corte)
+            : 'hoy';
+        estado.textContent = `Información calculada hasta ${fechaCorte}.`;
+    } catch (error) {
+        if (numeroSolicitud !== solicitudDashboardFinanciero) return;
+        console.error('Error al cargar el dashboard financiero:', error);
+        estado.classList.add('error');
+        estado.textContent = error.message || 'No se pudo cargar el dashboard financiero.';
+    } finally {
+        if (numeroSolicitud === solicitudDashboardFinanciero && boton) {
+            boton.disabled = false;
+            boton.textContent = 'Actualizar';
+        }
+    }
+}
+
+// ==========================================
+// ANÁLISIS DE INGRESOS
+// ==========================================
+let ventasAnalisisIngresosGlobal = [];
+let ventasAnalisisIngresosFiltradas = [];
+let gruposClientesIngresosGlobal = new Map();
+let filtrosAnalisisIngresosInicializados = false;
+let solicitudAnalisisIngresos = 0;
+
+function fechaISOIngresos(fecha) {
+    const anio = fecha.getFullYear();
+    const mes = String(fecha.getMonth() + 1).padStart(2, '0');
+    const dia = String(fecha.getDate()).padStart(2, '0');
+
+    return `${anio}-${mes}-${dia}`;
+}
+
+function inicializarAnalisisIngresos() {
+    if (filtrosAnalisisIngresosInicializados) return;
+
+    const inicio = document.getElementById('ingresos-fecha-inicio');
+    const fin = document.getElementById('ingresos-fecha-fin');
+    const hoy = new Date();
+
+    inicio.value = fechaISOIngresos(
+        new Date(hoy.getFullYear(), hoy.getMonth(), 1)
+    );
+
+    fin.value = fechaISOIngresos(hoy);
+
+    document
+        .getElementById('btn-actualizar-analisis-ingresos')
+        .addEventListener('click', obtenerAnalisisIngresos);
+
+    document
+        .getElementById('btn-restablecer-filtros-ingresos')
+        .addEventListener('click', () => {
+            const fechaActual = new Date();
+
+            inicio.value = fechaISOIngresos(
+                new Date(
+                    fechaActual.getFullYear(),
+                    fechaActual.getMonth(),
+                    1
+                )
+            );
+
+            fin.value = fechaISOIngresos(fechaActual);
+
+            document.getElementById('ingresos-busqueda').value = '';
+
+            obtenerAnalisisIngresos();
+        });
+
+    inicio.addEventListener('change', obtenerAnalisisIngresos);
+    fin.addEventListener('change', obtenerAnalisisIngresos);
+
+    document
+        .getElementById('ingresos-busqueda')
+        .addEventListener('input', aplicarBusquedaAnalisisIngresos);
+
+    document
+        .getElementById('btn-cerrar-detalle-ingresos')
+        .addEventListener('click', cerrarDetalleClienteIngresos);
+
+    filtrosAnalisisIngresosInicializados = true;
+}
+
+function montosVentaAnalisisIngresos(venta) {
+    const total = Math.max(Number(venta.total || 0), 0);
+
+    const esCredito =
+        normalizarBusqueda(venta.tipo_venta) === 'credito';
+
+    const montoRegistrado = Number(venta.monto_pagado || 0);
+
+    const cobrado = esCredito
+        ? Math.min(Math.max(montoRegistrado, 0), total)
+        : total;
+
+    return {
+        total,
+        cobrado,
+        pendiente: Math.max(total - cobrado, 0)
+    };
+}
+
+function nombreClienteAnalisisIngresos(venta) {
+    if (
+        venta.id_cliente === null
+        || venta.id_cliente === undefined
+    ) {
+        return 'Público general';
+    }
+
+    return venta.cliente || `Cliente #${venta.id_cliente}`;
+}
+
+function claveClienteAnalisisIngresos(venta) {
+    if (
+        venta.id_cliente === null
+        || venta.id_cliente === undefined
+    ) {
+        return 'publico-general';
+    }
+
+    return `cliente-${Number(venta.id_cliente)}`;
+}
+
+function detallesVentaAnalisisIngresos(venta) {
+    return (venta.ventas_detalle || []).map(detalle => {
+        const cantidad = Math.max(
+            Number(detalle.cantidad || 0),
+            0
+        );
+
+        const precio = Math.max(
+            Number(detalle.precio_unitario || 0),
+            0
+        );
+
+        const subtotal = Math.max(
+            Number(detalle.subtotal || cantidad * precio),
+            0
+        );
+
+        const esVentaRapida =
+            detalle.id_producto === null
+            || detalle.id_producto === undefined;
+
+        return {
+            id_producto: detalle.id_producto,
+
+            nombre:
+                detalle.nombre_producto
+                || detalle.productos?.nombre
+                || 'Producto sin nombre',
+
+            sku:
+                detalle.productos?.sku
+                || (
+                    esVentaRapida
+                        ? 'Venta rápida'
+                        : 'Sin SKU'
+                ),
+
+            tipo:
+                detalle.tipo_item
+                || (
+                    esVentaRapida
+                        ? 'Venta rápida'
+                        : 'Inventario'
+                ),
+
+            cantidad,
+            precio,
+            subtotal
+        };
+    });
+}
+
+function textoBusquedaVentaIngresos(venta) {
+    const productos = detallesVentaAnalisisIngresos(venta)
+        .flatMap(producto => [
+            producto.nombre,
+            producto.sku,
+            producto.tipo
+        ]);
+
+    return normalizarBusqueda([
+        venta.id_venta,
+        nombreClienteAnalisisIngresos(venta),
+        venta.tipo_venta,
+        venta.metodo_pago,
+        ...productos
+    ].join(' '));
+}
+
+function agruparClientesAnalisisIngresos(ventas) {
+    const grupos = new Map();
+
+    ventas.forEach(venta => {
+        const clave = claveClienteAnalisisIngresos(venta);
+        const montos = montosVentaAnalisisIngresos(venta);
+
+        if (!grupos.has(clave)) {
+            grupos.set(clave, {
+                clave,
+                nombre: nombreClienteAnalisisIngresos(venta),
+                esPublicoGeneral: clave === 'publico-general',
+                ventas: [],
+                total: 0,
+                cobrado: 0,
+                pendiente: 0,
+                ultimaCompra: null
+            });
+        }
+
+        const grupo = grupos.get(clave);
+
+        grupo.ventas.push(venta);
+        grupo.total += montos.total;
+        grupo.cobrado += montos.cobrado;
+        grupo.pendiente += montos.pendiente;
+
+        const fechaActual = new Date(venta.fecha).getTime();
+
+        const fechaAnterior = grupo.ultimaCompra
+            ? new Date(grupo.ultimaCompra).getTime()
+            : Number.NEGATIVE_INFINITY;
+
+        if (
+            Number.isFinite(fechaActual)
+            && fechaActual > fechaAnterior
+        ) {
+            grupo.ultimaCompra = venta.fecha;
+        }
+    });
+
+    return grupos;
+}
+
+function actualizarResumenAnalisisIngresos(ventas) {
+    const resumen = ventas.reduce((acumulado, venta) => {
+        const montos = montosVentaAnalisisIngresos(venta);
+
+        acumulado.vendido += montos.total;
+        acumulado.cobrado += montos.cobrado;
+        acumulado.pendiente += montos.pendiente;
+
+        return acumulado;
+    }, {
+        vendido: 0,
+        cobrado: 0,
+        pendiente: 0
+    });
+
+    const ticketPromedio = ventas.length > 0
+        ? resumen.vendido / ventas.length
+        : 0;
+
+    document
+        .getElementById('ingresos-total-vendido')
+        .textContent = formatearMoneda(resumen.vendido);
+
+    document
+        .getElementById('ingresos-total-cobrado')
+        .textContent = formatearMoneda(resumen.cobrado);
+
+    document
+        .getElementById('ingresos-total-pendiente')
+        .textContent = formatearMoneda(resumen.pendiente);
+
+    document
+        .getElementById('ingresos-ticket-promedio')
+        .textContent = formatearMoneda(ticketPromedio);
+}
+
+function renderizarClientesAnalisisIngresos(ventas) {
+    const tabla = document.getElementById(
+        'tabla-ingresos-clientes-body'
+    );
+
+    const grupos = agruparClientesAnalisisIngresos(ventas);
+
+    gruposClientesIngresosGlobal = grupos;
+
+    const clientes = [...grupos.values()].sort((a, b) => {
+        if (a.esPublicoGeneral !== b.esPublicoGeneral) {
+            return a.esPublicoGeneral ? 1 : -1;
+        }
+
+        return b.total - a.total;
+    });
+
+    document
+        .getElementById('ingresos-clientes-resumen')
+        .textContent =
+            `${clientes.length} cliente(s) o grupo(s) · `
+            + `${ventas.length} venta(s)`;
+
+    if (clientes.length === 0) {
+        tabla.innerHTML = `
+            <tr>
+                <td
+                    colspan="7"
+                    style="text-align:center; color:#6b7280;"
+                >
+                    No hay clientes ni ventas para mostrar.
+                </td>
+            </tr>
+        `;
+
+        cerrarDetalleClienteIngresos();
+        return;
+    }
+
+    tabla.innerHTML = clientes.map(cliente => `
+        <tr>
+            <td>
+                <strong>
+                    ${escaparHTML(cliente.nombre)}
+                </strong>
+
+                ${
+                    cliente.esPublicoGeneral
+                        ? `
+                            <br>
+                            <span class="badge-neutral">
+                                Sin cliente registrado
+                            </span>
+                        `
+                        : ''
+                }
+            </td>
+
+            <td>${cliente.ventas.length}</td>
+
+            <td>
+                <strong>
+                    ${formatearMoneda(cliente.total)}
+                </strong>
+            </td>
+
+            <td class="amount-positive">
+                ${formatearMoneda(cliente.cobrado)}
+            </td>
+
+            <td class="amount-negative">
+                ${formatearMoneda(cliente.pendiente)}
+            </td>
+
+            <td>
+                ${formatearFechaCXC(cliente.ultimaCompra)}
+            </td>
+
+            <td>
+                <button
+                    type="button"
+                    class="btn-secondary"
+                    onclick="abrirDetalleClienteIngresos(
+                        '${cliente.clave}'
+                    )"
+                >
+                    Ver compras
+                </button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+function abrirDetalleClienteIngresos(clave) {
+    const grupo = gruposClientesIngresosGlobal.get(clave);
+
+    if (!grupo) return;
+
+    const contenedor = document.getElementById(
+        'ingresos-detalle-cliente'
+    );
+
+    const dias = new Map();
+
+    grupo.ventas.forEach(venta => {
+        const fecha =
+            claveFechaLocalCXC(venta.fecha)
+            || 'Sin fecha';
+
+        const montos = montosVentaAnalisisIngresos(venta);
+
+        if (!dias.has(fecha)) {
+            dias.set(fecha, {
+                fecha,
+                ventas: 0,
+                productos: new Map(),
+                total: 0,
+                cobrado: 0,
+                pendiente: 0
+            });
+        }
+
+        const dia = dias.get(fecha);
+
+        dia.ventas += 1;
+        dia.total += montos.total;
+        dia.cobrado += montos.cobrado;
+        dia.pendiente += montos.pendiente;
+
+        detallesVentaAnalisisIngresos(venta)
+            .forEach(producto => {
+                const claveProducto = normalizarBusqueda(
+                    producto.nombre
+                );
+
+                const anterior = dia.productos.get(
+                    claveProducto
+                ) || {
+                    nombre: producto.nombre,
+                    cantidad: 0
+                };
+
+                anterior.cantidad += producto.cantidad;
+
+                dia.productos.set(
+                    claveProducto,
+                    anterior
+                );
+            });
+    });
+
+    const registros = [...dias.values()].sort((a, b) =>
+        String(b.fecha).localeCompare(String(a.fecha))
+    );
+
+    document
+        .getElementById('ingresos-detalle-cliente-tipo')
+        .textContent = grupo.esPublicoGeneral
+            ? 'Público general'
+            : 'Cliente registrado';
+
+    document
+        .getElementById('ingresos-detalle-cliente-nombre')
+        .textContent = grupo.nombre;
+
+    document
+        .getElementById('ingresos-detalle-dias')
+        .textContent = registros.length;
+
+    document
+        .getElementById('ingresos-detalle-total')
+        .textContent = formatearMoneda(grupo.total);
+
+    document
+        .getElementById('ingresos-detalle-cobrado')
+        .textContent = formatearMoneda(grupo.cobrado);
+
+    document
+        .getElementById('ingresos-detalle-pendiente')
+        .textContent = formatearMoneda(grupo.pendiente);
+
+    document
+        .getElementById(
+            'tabla-ingresos-detalle-cliente-body'
+        )
+        .innerHTML = registros.map(dia => {
+            const productos = [...dia.productos.values()];
+
+            const descripcion = productos.length > 0
+                ? productos.map(producto =>
+                    `${escaparHTML(producto.nombre)} × `
+                    + `${producto.cantidad}`
+                ).join('<br>')
+                : `
+                    <span style="color:#6b7280;">
+                        Sin detalle de productos
+                    </span>
+                `;
+
+            return `
+                <tr>
+                    <td>
+                        ${formatearFechaCXC(dia.fecha)}
+                    </td>
+
+                    <td>${dia.ventas}</td>
+
+                    <td>${descripcion}</td>
+
+                    <td>
+                        <strong>
+                            ${formatearMoneda(dia.total)}
+                        </strong>
+                    </td>
+
+                    <td class="amount-positive">
+                        ${formatearMoneda(dia.cobrado)}
+                    </td>
+
+                    <td class="amount-negative">
+                        ${formatearMoneda(dia.pendiente)}
+                    </td>
+                </tr>
+            `;
+        }).join('');
+
+    contenedor.classList.remove('oculto');
+
+    contenedor.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start'
+    });
+}
+
+function cerrarDetalleClienteIngresos() {
+    const contenedor = document.getElementById(
+        'ingresos-detalle-cliente'
+    );
+
+    if (contenedor) {
+        contenedor.classList.add('oculto');
+    }
+}
+
+function renderizarProductosAnalisisIngresos(ventas) {
+    const tabla = document.getElementById(
+        'tabla-ingresos-productos-body'
+    );
+
+    const productos = new Map();
+
+    ventas.forEach(venta => {
+        detallesVentaAnalisisIngresos(venta)
+            .forEach(producto => {
+                const tieneProducto =
+                    producto.id_producto !== null
+                    && producto.id_producto !== undefined;
+
+                const clave = tieneProducto
+                    ? `producto-${producto.id_producto}`
+                    : `rapido-${normalizarBusqueda(
+                        producto.nombre
+                    )}`;
+
+                if (!productos.has(clave)) {
+                    productos.set(clave, {
+                        nombre: producto.nombre,
+                        sku: producto.sku,
+                        tipo: producto.tipo,
+                        unidades: 0,
+                        ventas: new Set(),
+                        total: 0
+                    });
+                }
+
+                const registro = productos.get(clave);
+
+                registro.unidades += producto.cantidad;
+                registro.ventas.add(venta.id_venta);
+                registro.total += producto.subtotal;
+            });
+    });
+
+    const lista = [...productos.values()]
+        .sort((a, b) => b.total - a.total);
+
+    const totalProductos = lista.reduce(
+        (suma, producto) => suma + producto.total,
+        0
+    );
+
+    const unidades = lista.reduce(
+        (suma, producto) => suma + producto.unidades,
+        0
+    );
+
+    document
+        .getElementById('ingresos-productos-resumen')
+        .textContent =
+            `${lista.length} producto(s) · `
+            + `${unidades} unidad(es) vendida(s)`;
+
+    if (lista.length === 0) {
+        tabla.innerHTML = `
+            <tr>
+                <td
+                    colspan="7"
+                    style="text-align:center; color:#6b7280;"
+                >
+                    No hay productos vendidos en este periodo.
+                </td>
+            </tr>
+        `;
+
+        return;
+    }
+
+    tabla.innerHTML = lista.map(producto => {
+        const precioPromedio = producto.unidades > 0
+            ? producto.total / producto.unidades
+            : 0;
+
+        const participacion = totalProductos > 0
+            ? (producto.total / totalProductos) * 100
+            : 0;
+
+        return `
+            <tr>
+                <td>
+                    <strong>
+                        ${escaparHTML(producto.nombre)}
+                    </strong>
+                </td>
+
+                <td>
+                    ${escaparHTML(producto.sku)}
+                    <br>
+                    <small>
+                        ${escaparHTML(producto.tipo)}
+                    </small>
+                </td>
+
+                <td>${producto.unidades}</td>
+                <td>${producto.ventas.size}</td>
+
+                <td>
+                    ${formatearMoneda(precioPromedio)}
+                </td>
+
+                <td>
+                    <strong>
+                        ${formatearMoneda(producto.total)}
+                    </strong>
+                </td>
+
+                <td>
+                    ${participacion.toFixed(1)}%
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function renderizarResumenDiarioAnalisisIngresos(ventas) {
+    const tabla = document.getElementById(
+        'tabla-ingresos-diario-body'
+    );
+
+    const dias = new Map();
+
+    ventas.forEach(venta => {
+        const fecha =
+            claveFechaLocalCXC(venta.fecha)
+            || 'Sin fecha';
+
+        const montos = montosVentaAnalisisIngresos(venta);
+
+        if (!dias.has(fecha)) {
+            dias.set(fecha, {
+                fecha,
+                ventas: 0,
+                clientes: new Set(),
+                vendido: 0,
+                cobrado: 0,
+                pendiente: 0
+            });
+        }
+
+        const dia = dias.get(fecha);
+
+        dia.ventas += 1;
+
+        dia.clientes.add(
+            claveClienteAnalisisIngresos(venta)
+        );
+
+        dia.vendido += montos.total;
+        dia.cobrado += montos.cobrado;
+        dia.pendiente += montos.pendiente;
+    });
+
+    const registros = [...dias.values()].sort((a, b) =>
+        String(b.fecha).localeCompare(String(a.fecha))
+    );
+
+    document
+        .getElementById('ingresos-diario-resumen')
+        .textContent =
+            `${registros.length} día(s) con movimientos`;
+
+    if (registros.length === 0) {
+        tabla.innerHTML = `
+            <tr>
+                <td
+                    colspan="6"
+                    style="text-align:center; color:#6b7280;"
+                >
+                    No hay movimientos diarios para mostrar.
+                </td>
+            </tr>
+        `;
+
+        return;
+    }
+
+    tabla.innerHTML = registros.map(dia => `
+        <tr>
+            <td>
+                ${formatearFechaCXC(dia.fecha)}
+            </td>
+
+            <td>${dia.ventas}</td>
+            <td>${dia.clientes.size}</td>
+
+            <td>
+                <strong>
+                    ${formatearMoneda(dia.vendido)}
+                </strong>
+            </td>
+
+            <td class="amount-positive">
+                ${formatearMoneda(dia.cobrado)}
+            </td>
+
+            <td class="amount-negative">
+                ${formatearMoneda(dia.pendiente)}
+            </td>
+        </tr>
+    `).join('');
+}
+
+function renderizarAnalisisIngresos(ventas) {
+    actualizarResumenAnalisisIngresos(ventas);
+    renderizarClientesAnalisisIngresos(ventas);
+    renderizarProductosAnalisisIngresos(ventas);
+    renderizarResumenDiarioAnalisisIngresos(ventas);
+}
+
+function aplicarBusquedaAnalisisIngresos() {
+    const busqueda = normalizarBusqueda(
+        document.getElementById('ingresos-busqueda').value
+    );
+
+    ventasAnalisisIngresosFiltradas = busqueda
+        ? ventasAnalisisIngresosGlobal.filter(venta =>
+            textoBusquedaVentaIngresos(venta)
+                .includes(busqueda)
+        )
+        : [...ventasAnalisisIngresosGlobal];
+
+    cerrarDetalleClienteIngresos();
+
+    renderizarAnalisisIngresos(
+        ventasAnalisisIngresosFiltradas
+    );
+}
+
+async function obtenerAnalisisIngresos() {
+    inicializarAnalisisIngresos();
+
+    const sesion = obtenerSesion();
+
+    const inicio = document
+        .getElementById('ingresos-fecha-inicio')
+        .value;
+
+    const fin = document
+        .getElementById('ingresos-fecha-fin')
+        .value;
+
+    const estado = document.getElementById(
+        'ingresos-estado'
+    );
+
+    const boton = document.getElementById(
+        'btn-actualizar-analisis-ingresos'
+    );
+
+    if (!sesion || !sesion.id_empresa || !estado) {
+        return;
+    }
+
+    if (!inicio || !fin) {
+        estado.classList.add('error');
+        estado.textContent =
+            'Selecciona la fecha inicial y la fecha final.';
+        return;
+    }
+
+    if (inicio > fin) {
+        estado.classList.add('error');
+        estado.textContent =
+            'La fecha inicial no puede ser posterior a la final.';
+        return;
+    }
+
+    const numeroSolicitud = ++solicitudAnalisisIngresos;
+
+    boton.disabled = true;
+    boton.textContent = 'Actualizando...';
+
+    estado.classList.remove('error');
+    estado.textContent =
+        'Consultando ventas y cobros...';
+
+    cerrarDetalleClienteIngresos();
+
+    try {
+        const parametros = new URLSearchParams({
+            fecha_inicio: inicio,
+            fecha_fin: fin
+        });
+
+        const respuesta = await fetch(
+            `/api/finanzas/ingresos/`
+            + `${sesion.id_empresa}?`
+            + parametros.toString(),
+            {
+                cache: 'no-store'
+            }
+        );
+
+        const resultado = await respuesta.json();
+
+        if (
+            !respuesta.ok
+            || resultado.status !== 'success'
+            || !resultado.data
+        ) {
+            throw new Error(
+                mensajeErrorAPI(
+                    resultado,
+                    'No se pudo cargar el análisis de ingresos.'
+                )
+            );
+        }
+
+        if (
+            numeroSolicitud !== solicitudAnalisisIngresos
+        ) {
+            return;
+        }
+
+        ventasAnalisisIngresosGlobal =
+            Array.isArray(resultado.data.ventas)
+                ? resultado.data.ventas
+                : [];
+
+        aplicarBusquedaAnalisisIngresos();
+
+        estado.textContent =
+            ventasAnalisisIngresosGlobal.length > 0
+                ? (
+                    `${ventasAnalisisIngresosGlobal.length} `
+                    + 'venta(s) encontrada(s) en el periodo.'
+                )
+                : (
+                    'No hay ventas registradas en '
+                    + 'el periodo seleccionado.'
+                );
+    } catch (error) {
+        if (
+            numeroSolicitud !== solicitudAnalisisIngresos
+        ) {
+            return;
+        }
+
+        console.error(
+            'Error al cargar el análisis de ingresos:',
+            error
+        );
+
+        ventasAnalisisIngresosGlobal = [];
+        ventasAnalisisIngresosFiltradas = [];
+
+        renderizarAnalisisIngresos([]);
+
+        estado.classList.add('error');
+
+        estado.textContent =
+            error.message
+            || 'No se pudo cargar el análisis de ingresos.';
+    } finally {
+        if (
+            numeroSolicitud === solicitudAnalisisIngresos
+        ) {
+            boton.disabled = false;
+            boton.textContent = 'Actualizar';
+        }
+    }
+}
+
+// ==========================================
+// COMPROBANTES DE PAGO
+// ==========================================
+let comprobantesPagoGlobal = [];
+let comprobantesPagoFiltrados = [];
+let comprobantePagoSeleccionado = null;
+let comprobantesPagoInicializados = false;
+let solicitudComprobantesPago = 0;
+
+function fechaISOComprobante(fecha) {
+    const anio = fecha.getFullYear();
+    const mes = String(fecha.getMonth() + 1).padStart(2, '0');
+    const dia = String(fecha.getDate()).padStart(2, '0');
+
+    return `${anio}-${mes}-${dia}`;
+}
+
+function folioComprobante(prefijo, id) {
+    return (
+        `${prefijo}-`
+        + String(Number(id) || 0).padStart(6, '0')
+    );
+}
+
+function ventaDePagoComprobante(pago) {
+    return Array.isArray(pago.ventas)
+        ? pago.ventas[0] || {}
+        : pago.ventas || {};
+}
+
+function productosDeComprobante(venta) {
+    return (venta?.ventas_detalle || []).map(detalle => ({
+        nombre:
+            detalle.nombre_producto
+            || detalle.productos?.nombre
+            || 'Producto sin nombre',
+
+        sku:
+            detalle.productos?.sku
+            || 'Sin SKU',
+
+        cantidad: Math.max(
+            Number(detalle.cantidad || 0),
+            0
+        ),
+
+        precio: Math.max(
+            Number(detalle.precio_unitario || 0),
+            0
+        ),
+
+        subtotal: Math.max(
+            Number(detalle.subtotal || 0),
+            0
+        )
+    }));
+}
+
+function normalizarVentaComoComprobante(venta, tipo) {
+    const productos = productosDeComprobante(venta);
+
+    const cliente = tipo === 'publico'
+        ? 'Público general'
+        : venta.cliente || 'Cliente registrado';
+
+    const comprobante = {
+        clave: `${tipo}-${Number(venta.id_venta)}`,
+        tipo,
+        folio: folioComprobante(
+            'V',
+            venta.id_venta
+        ),
+        id_venta: Number(venta.id_venta),
+        fecha: venta.fecha,
+        cliente,
+        concepto:
+            `Pago de venta de contado #${venta.id_venta}`,
+        metodo:
+            venta.metodo_pago
+            || 'No especificado',
+        importe: Number(venta.total || 0),
+        saldo_antes: null,
+        saldo_despues: null,
+        referencia: null,
+        notas: null,
+        productos
+    };
+
+    comprobante.busqueda = normalizarBusqueda([
+        comprobante.folio,
+        comprobante.id_venta,
+        comprobante.cliente,
+        comprobante.metodo,
+
+        ...productos.flatMap(producto => [
+            producto.nombre,
+            producto.sku
+        ])
+    ].join(' '));
+
+    return comprobante;
+}
+
+function normalizarPagoCXCComoComprobante(pago) {
+    const venta = ventaDePagoComprobante(pago);
+    const productos = productosDeComprobante(venta);
+
+    const comprobante = {
+        clave: `cxc-${Number(pago.id_pago_cxc)}`,
+        tipo: 'cxc',
+
+        folio: folioComprobante(
+            'CXC',
+            pago.id_pago_cxc
+        ),
+
+        id_venta: Number(pago.id_venta),
+        fecha: pago.fecha_pago,
+
+        cliente:
+            venta.cliente
+            || 'Cliente registrado',
+
+        concepto:
+            pago.descripcion
+            || `Abono a venta #${pago.id_venta}`,
+
+        metodo:
+            pago.metodo_pago
+            || 'No especificado',
+
+        importe: Number(pago.monto || 0),
+
+        saldo_antes: Number(
+            pago.saldo_antes || 0
+        ),
+
+        saldo_despues: Number(
+            pago.saldo_despues || 0
+        ),
+
+        referencia: pago.referencia || null,
+        notas: pago.notas || null,
+        productos
+    };
+
+    comprobante.busqueda = normalizarBusqueda([
+        comprobante.folio,
+        comprobante.id_venta,
+        comprobante.cliente,
+        comprobante.concepto,
+        comprobante.metodo,
+        comprobante.referencia,
+        comprobante.notas,
+
+        ...productos.flatMap(producto => [
+            producto.nombre,
+            producto.sku
+        ])
+    ].join(' '));
+
+    return comprobante;
+}
+
+function inicializarComprobantesPago() {
+    if (comprobantesPagoInicializados) {
+        return;
+    }
+
+    const inicio = document.getElementById(
+        'comprobantes-fecha-inicio'
+    );
+
+    const fin = document.getElementById(
+        'comprobantes-fecha-fin'
+    );
+
+    const hoy = new Date();
+
+    inicio.value = fechaISOComprobante(
+        new Date(
+            hoy.getFullYear(),
+            hoy.getMonth(),
+            1
+        )
+    );
+
+    fin.value = fechaISOComprobante(hoy);
+
+    document
+        .getElementById('btn-actualizar-comprobantes')
+        .addEventListener(
+            'click',
+            obtenerComprobantesPago
+        );
+
+    inicio.addEventListener(
+        'change',
+        obtenerComprobantesPago
+    );
+
+    fin.addEventListener(
+        'change',
+        obtenerComprobantesPago
+    );
+
+    document
+        .getElementById('comprobantes-busqueda')
+        .addEventListener(
+            'input',
+            filtrarComprobantesPago
+        );
+
+    document
+        .getElementById('btn-cerrar-comprobante')
+        .addEventListener(
+            'click',
+            cerrarVistaPreviaComprobante
+        );
+
+    document
+        .getElementById('btn-descargar-comprobante')
+        .addEventListener(
+            'click',
+            imprimirComprobantePago
+        );
+
+    document
+        .getElementById(
+            'btn-restablecer-comprobantes'
+        )
+        .addEventListener('click', () => {
+            const ahora = new Date();
+
+            inicio.value = fechaISOComprobante(
+                new Date(
+                    ahora.getFullYear(),
+                    ahora.getMonth(),
+                    1
+                )
+            );
+
+            fin.value = fechaISOComprobante(ahora);
+
+            document.getElementById(
+                'comprobantes-busqueda'
+            ).value = '';
+
+            obtenerComprobantesPago();
+        });
+
+    comprobantesPagoInicializados = true;
+}
+
+function resumenProductosComprobante(productos) {
+    if (!productos.length) {
+        return `
+            <span style="color:#6b7280;">
+                Sin detalle
+            </span>
+        `;
+    }
+
+    const lineas = productos
+        .slice(0, 2)
+        .map(producto =>
+            `${escaparHTML(producto.nombre)} × `
+            + `${producto.cantidad}`
+        );
+
+    if (productos.length > 2) {
+        lineas.push(
+            `y ${productos.length - 2} producto(s) más`
+        );
+    }
+
+    return lineas.join('<br>');
+}
+
+function renderizarTablaVentasComprobantes(
+    lista,
+    tablaId,
+    mostrarCliente
+) {
+    const tabla = document.getElementById(tablaId);
+    const columnas = mostrarCliente ? 7 : 6;
+
+    if (!lista.length) {
+        tabla.innerHTML = `
+            <tr>
+                <td
+                    colspan="${columnas}"
+                    style="text-align:center; color:#6b7280;"
+                >
+                    No hay comprobantes para mostrar.
+                </td>
+            </tr>
+        `;
+
+        return;
+    }
+
+    tabla.innerHTML = lista.map(item => `
+        <tr>
+            <td>
+                <strong>${item.folio}</strong>
+            </td>
+
+            <td>
+                ${formatearFechaCXC(item.fecha, true)}
+            </td>
+
+            ${
+                mostrarCliente
+                    ? `
+                        <td>
+                            ${escaparHTML(item.cliente)}
+                        </td>
+                    `
+                    : ''
+            }
+
+            <td>
+                ${resumenProductosComprobante(
+                    item.productos
+                )}
+            </td>
+
+            <td>
+                ${escaparHTML(item.metodo)}
+            </td>
+
+            <td>
+                <strong>
+                    ${formatearMoneda(item.importe)}
+                </strong>
+            </td>
+
+            <td>
+                <button
+                    type="button"
+                    class="btn-table btn-table-edit"
+                    onclick="abrirComprobantePago(
+                        '${item.clave}'
+                    )"
+                >
+                    Ver comprobante
+                </button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+function renderizarTablaCXCComprobantes(lista) {
+    const tabla = document.getElementById(
+        'tabla-comprobantes-cxc-body'
+    );
+
+    if (!lista.length) {
+        tabla.innerHTML = `
+            <tr>
+                <td
+                    colspan="9"
+                    style="text-align:center; color:#6b7280;"
+                >
+                    No hay anticipos ni abonos para mostrar.
+                </td>
+            </tr>
+        `;
+
+        return;
+    }
+
+    tabla.innerHTML = lista.map(item => `
+        <tr>
+            <td>
+                <strong>${item.folio}</strong>
+            </td>
+
+            <td>
+                ${formatearFechaCXC(item.fecha, true)}
+            </td>
+
+            <td>
+                ${escaparHTML(item.cliente)}
+            </td>
+
+            <td>
+                #${item.id_venta}
+            </td>
+
+            <td>
+                ${escaparHTML(item.concepto)}
+            </td>
+
+            <td>
+                ${escaparHTML(item.metodo)}
+            </td>
+
+            <td class="amount-positive">
+                <strong>
+                    ${formatearMoneda(item.importe)}
+                </strong>
+            </td>
+
+            <td>
+                ${formatearMoneda(item.saldo_despues)}
+            </td>
+
+            <td>
+                <button
+                    type="button"
+                    class="btn-table btn-table-edit"
+                    onclick="abrirComprobantePago(
+                        '${item.clave}'
+                    )"
+                >
+                    Ver comprobante
+                </button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+function renderizarComprobantesPago() {
+    const publico = comprobantesPagoFiltrados.filter(
+        item => item.tipo === 'publico'
+    );
+
+    const clientes = comprobantesPagoFiltrados.filter(
+        item => item.tipo === 'clientes'
+    );
+
+    const cxc = comprobantesPagoFiltrados.filter(
+        item => item.tipo === 'cxc'
+    );
+
+    const importeTotal =
+        comprobantesPagoFiltrados.reduce(
+            (suma, item) => suma + item.importe,
+            0
+        );
+
+    document
+        .getElementById('comprobantes-total-registros')
+        .textContent = comprobantesPagoFiltrados.length;
+
+    document
+        .getElementById('comprobantes-importe-total')
+        .textContent = formatearMoneda(importeTotal);
+
+    document
+        .getElementById('comprobantes-total-ventas')
+        .textContent =
+            publico.length + clientes.length;
+
+    document
+        .getElementById('comprobantes-total-cxc')
+        .textContent = cxc.length;
+
+    document
+        .getElementById('comprobantes-conteo-publico')
+        .textContent = publico.length;
+
+    document
+        .getElementById('comprobantes-conteo-clientes')
+        .textContent = clientes.length;
+
+    document
+        .getElementById('comprobantes-conteo-cxc')
+        .textContent = cxc.length;
+
+    const importePublico = publico.reduce(
+        (suma, item) => suma + item.importe,
+        0
+    );
+
+    const importeClientes = clientes.reduce(
+        (suma, item) => suma + item.importe,
+        0
+    );
+
+    const importeCXC = cxc.reduce(
+        (suma, item) => suma + item.importe,
+        0
+    );
+
+    document
+        .getElementById('comprobantes-resumen-publico')
+        .textContent =
+            `${publico.length} comprobante(s) · `
+            + formatearMoneda(importePublico);
+
+    document
+        .getElementById('comprobantes-resumen-clientes')
+        .textContent =
+            `${clientes.length} comprobante(s) · `
+            + formatearMoneda(importeClientes);
+
+    document
+        .getElementById('comprobantes-resumen-cxc')
+        .textContent =
+            `${cxc.length} pago(s) · `
+            + formatearMoneda(importeCXC);
+
+    renderizarTablaVentasComprobantes(
+        publico,
+        'tabla-comprobantes-publico-body',
+        false
+    );
+
+    renderizarTablaVentasComprobantes(
+        clientes,
+        'tabla-comprobantes-clientes-body',
+        true
+    );
+
+    renderizarTablaCXCComprobantes(cxc);
+}
+
+function filtrarComprobantesPago() {
+    const busqueda = normalizarBusqueda(
+        document.getElementById(
+            'comprobantes-busqueda'
+        ).value
+    );
+
+    comprobantesPagoFiltrados = busqueda
+        ? comprobantesPagoGlobal.filter(item =>
+            item.busqueda.includes(busqueda)
+        )
+        : [...comprobantesPagoGlobal];
+
+    cerrarVistaPreviaComprobante();
+    renderizarComprobantesPago();
+}
+
+function cambiarPestanaComprobantes(tipo) {
+    const pestanas = {
+        publico: [
+            'btn-comprobantes-publico',
+            'comprobantes-panel-publico'
+        ],
+
+        clientes: [
+            'btn-comprobantes-clientes',
+            'comprobantes-panel-clientes'
+        ],
+
+        cxc: [
+            'btn-comprobantes-cxc',
+            'comprobantes-panel-cxc'
+        ]
+    };
+
+    if (!pestanas[tipo]) {
+        return;
+    }
+
+    Object.entries(pestanas).forEach(
+        ([clave, elementos]) => {
+            const [botonId, panelId] = elementos;
+            const activo = clave === tipo;
+
+            const boton =
+                document.getElementById(botonId);
+
+            document
+                .getElementById(panelId)
+                .classList.toggle(
+                    'oculto',
+                    !activo
+                );
+
+            boton.classList.toggle(
+                'btn-primary',
+                activo
+            );
+
+            boton.classList.toggle(
+                'btn-secondary',
+                !activo
+            );
+
+            boton.setAttribute(
+                'aria-selected',
+                String(activo)
+            );
+        }
+    );
+
+    cerrarVistaPreviaComprobante();
+}
+
+function nombreEmpresaComprobante() {
+    const sesion = obtenerSesion() || {};
+
+    return (
+        sesion.nombre_empresa
+        || sesion.razon_social
+        || sesion.empresa
+        || `Empresa #${sesion.id_empresa || ''}`
+    );
+}
+
+function filasProductosComprobante(productos) {
+    if (!productos.length) {
+        return `
+            <tr>
+                <td
+                    colspan="4"
+                    style="text-align:center;"
+                >
+                    Sin detalle de productos
+                </td>
+            </tr>
+        `;
+    }
+
+    return productos.map(producto => `
+        <tr>
+            <td>
+                ${escaparHTML(producto.nombre)}
+            </td>
+
+            <td>
+                ${producto.cantidad}
+            </td>
+
+            <td>
+                ${formatearMoneda(producto.precio)}
+            </td>
+
+            <td>
+                ${formatearMoneda(producto.subtotal)}
+            </td>
+        </tr>
+    `).join('');
+}
+
+function contenidoDocumentoComprobante(item) {
+    const saldos = item.tipo === 'cxc'
+        ? `
+            <div>
+                <span>Saldo anterior</span>
+                <strong>
+                    ${formatearMoneda(item.saldo_antes)}
+                </strong>
+            </div>
+
+            <div>
+                <span>Saldo posterior</span>
+                <strong>
+                    ${formatearMoneda(item.saldo_despues)}
+                </strong>
+            </div>
+        `
+        : '';
+
+    const referencia = item.referencia
+        ? `
+            <div>
+                <span>Referencia</span>
+                <strong>
+                    ${escaparHTML(item.referencia)}
+                </strong>
+            </div>
+        `
+        : '';
+
+    return `
+        <article class="comprobante-recibo">
+            <div class="comprobante-recibo-header">
+                <div>
+                    <p class="eyebrow">
+                        Comprobante interno de pago
+                    </p>
+
+                    <h2>
+                        ${escaparHTML(
+                            nombreEmpresaComprobante()
+                        )}
+                    </h2>
+
+                    <p>
+                        Generado mediante BizPilot
+                    </p>
+                </div>
+
+                <div>
+                    <span>Folio interno</span>
+                    <strong>${item.folio}</strong>
+                </div>
+            </div>
+
+            <div class="cxc-account-summary">
+                <div>
+                    <span>Fecha del pago</span>
+
+                    <strong>
+                        ${formatearFechaCXC(
+                            item.fecha,
+                            true
+                        )}
+                    </strong>
+                </div>
+
+                <div>
+                    <span>Recibido de</span>
+
+                    <strong>
+                        ${escaparHTML(item.cliente)}
+                    </strong>
+                </div>
+
+                <div>
+                    <span>Método</span>
+
+                    <strong>
+                        ${escaparHTML(item.metodo)}
+                    </strong>
+                </div>
+
+                <div>
+                    <span>Importe recibido</span>
+
+                    <strong>
+                        ${formatearMoneda(item.importe)}
+                    </strong>
+                </div>
+
+                ${saldos}
+                ${referencia}
+            </div>
+
+            <p>
+                <strong>Concepto:</strong>
+                ${escaparHTML(item.concepto)}
+            </p>
+
+            <div class="tabla-container">
+                <table class="tabla-custom">
+                    <thead>
+                        <tr>
+                            <th>Producto</th>
+                            <th>Cantidad</th>
+                            <th>Precio</th>
+                            <th>Subtotal</th>
+                        </tr>
+                    </thead>
+
+                    <tbody>
+                        ${filasProductosComprobante(
+                            item.productos
+                        )}
+                    </tbody>
+                </table>
+            </div>
+
+            ${
+                item.notas
+                    ? `
+                        <p>
+                            <strong>Notas:</strong>
+                            ${escaparHTML(item.notas)}
+                        </p>
+                    `
+                    : ''
+            }
+
+            <p class="financial-dashboard-note">
+                Documento informativo sin validez fiscal.
+                No sustituye un CFDI.
+            </p>
+        </article>
+    `;
+}
+
+function abrirComprobantePago(clave) {
+    const item = comprobantesPagoFiltrados.find(
+        comprobante =>
+            comprobante.clave === clave
+    );
+
+    if (!item) {
+        return;
+    }
+
+    comprobantePagoSeleccionado = item;
+
+    document
+        .getElementById(
+            'comprobante-vista-previa-titulo'
+        )
+        .textContent =
+            `Comprobante ${item.folio}`;
+
+    document
+        .getElementById('comprobante-contenido')
+        .innerHTML =
+            contenidoDocumentoComprobante(item);
+
+    const vista = document.getElementById(
+        'comprobante-vista-previa'
+    );
+
+    vista.classList.remove('oculto');
+
+    vista.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start'
+    });
+}
+
+function cerrarVistaPreviaComprobante() {
+    comprobantePagoSeleccionado = null;
+
+    document
+        .getElementById('comprobante-vista-previa')
+        ?.classList.add('oculto');
+}
+
+function imprimirComprobantePago() {
+    const item = comprobantePagoSeleccionado;
+
+    if (!item) {
+        alert(
+            'Selecciona un comprobante primero.'
+        );
+
+        return;
+    }
+
+    const ventana = window.open(
+        '',
+        '_blank',
+        'width=900,height=720'
+    );
+
+    if (!ventana) {
+        alert(
+            'Permite ventanas emergentes para '
+            + 'guardar el comprobante.'
+        );
+
+        return;
+    }
+
+    ventana.document.write(`
+        <!DOCTYPE html>
+        <html lang="es">
+        <head>
+            <meta charset="UTF-8">
+
+            <title>
+                Comprobante ${item.folio}
+            </title>
+
+            <style>
+                @page {
+                    size: A4;
+                    margin: 14mm;
+                }
+
+                * {
+                    box-sizing: border-box;
+                }
+
+                body {
+                    margin: 0;
+                    color: #111827;
+                    font-family:
+                        Arial,
+                        sans-serif;
+                }
+
+                .comprobante-recibo {
+                    max-width: 760px;
+                    margin: auto;
+                    padding: 24px;
+                    border: 1px solid #d1d5db;
+                    border-radius: 14px;
+                }
+
+                .comprobante-recibo-header {
+                    display: flex;
+                    justify-content: space-between;
+                    gap: 24px;
+                    padding-bottom: 18px;
+                    margin-bottom: 18px;
+                    border-bottom: 2px solid #111827;
+                }
+
+                .comprobante-recibo-header h2,
+                .comprobante-recibo-header p {
+                    margin: 4px 0;
+                }
+
+                .comprobante-recibo-header
+                > div:last-child {
+                    text-align: right;
+                }
+
+                span {
+                    display: block;
+                    margin-bottom: 5px;
+                    color: #6b7280;
+                    font-size: 12px;
+                }
+
+                .eyebrow {
+                    color: #059669;
+                    font-weight: 700;
+                    text-transform: uppercase;
+                }
+
+                .cxc-account-summary {
+                    display: grid;
+                    grid-template-columns:
+                        repeat(2, 1fr);
+                    gap: 12px;
+                    margin: 18px 0;
+                }
+
+                .cxc-account-summary > div {
+                    padding: 12px;
+                    border: 1px solid #e5e7eb;
+                    border-radius: 9px;
+                }
+
+                table {
+                    width: 100%;
+                    margin-top: 18px;
+                    border-collapse: collapse;
+                }
+
+                th,
+                td {
+                    padding: 10px;
+                    border: 1px solid #d1d5db;
+                    text-align: left;
+                    font-size: 13px;
+                }
+
+                th {
+                    background: #f3f4f6;
+                }
+
+                .financial-dashboard-note {
+                    margin-top: 22px;
+                    padding: 12px;
+                    text-align: center;
+                    background: #f9fafb;
+                    font-size: 12px;
+                }
+
+                @media print {
+                    .comprobante-recibo {
+                        padding: 0;
+                        border: 0;
+                    }
+                }
+            </style>
+        </head>
+
+        <body>
+            ${contenidoDocumentoComprobante(item)}
+        </body>
+        </html>
+    `);
+
+    ventana.document.close();
+
+    setTimeout(() => {
+        ventana.focus();
+        ventana.print();
+    }, 300);
+}
+
+async function obtenerComprobantesPago() {
+    inicializarComprobantesPago();
+
+    const sesion = obtenerSesion();
+
+    const inicio = document.getElementById(
+        'comprobantes-fecha-inicio'
+    ).value;
+
+    const fin = document.getElementById(
+        'comprobantes-fecha-fin'
+    ).value;
+
+    const estado = document.getElementById(
+        'comprobantes-estado'
+    );
+
+    const boton = document.getElementById(
+        'btn-actualizar-comprobantes'
+    );
+
+    if (
+        !sesion
+        || !sesion.id_empresa
+        || !estado
+    ) {
+        return;
+    }
+
+    if (!inicio || !fin || inicio > fin) {
+        estado.classList.add('error');
+
+        estado.textContent =
+            'Selecciona un periodo de fechas válido.';
+
+        return;
+    }
+
+    const numeroSolicitud =
+        ++solicitudComprobantesPago;
+
+    boton.disabled = true;
+    boton.textContent = 'Actualizando...';
+
+    estado.classList.remove('error');
+
+    estado.textContent =
+        'Consultando comprobantes...';
+
+    try {
+        const parametros = new URLSearchParams({
+            fecha_inicio: inicio,
+            fecha_fin: fin
+        });
+
+        const respuesta = await fetch(
+            `/api/finanzas/comprobantes/`
+            + `${sesion.id_empresa}?`
+            + parametros.toString(),
+            {
+                cache: 'no-store'
+            }
+        );
+
+        const resultado = await respuesta.json();
+
+        if (
+            !respuesta.ok
+            || resultado.status !== 'success'
+            || !resultado.data
+        ) {
+            throw new Error(
+                mensajeErrorAPI(
+                    resultado,
+                    'No se pudieron cargar '
+                    + 'los comprobantes.'
+                )
+            );
+        }
+
+        if (
+            numeroSolicitud
+            !== solicitudComprobantesPago
+        ) {
+            return;
+        }
+
+        const publico =
+            resultado.data
+                .ventas_publico_general
+            || [];
+
+        const clientes =
+            resultado.data
+                .ventas_clientes
+            || [];
+
+        const cxc =
+            resultado.data.abonos_cxc
+            || [];
+
+        comprobantesPagoGlobal = [
+            ...publico.map(venta =>
+                normalizarVentaComoComprobante(
+                    venta,
+                    'publico'
+                )
+            ),
+
+            ...clientes.map(venta =>
+                normalizarVentaComoComprobante(
+                    venta,
+                    'clientes'
+                )
+            ),
+
+            ...cxc.map(
+                normalizarPagoCXCComoComprobante
+            )
+        ];
+
+        filtrarComprobantesPago();
+
+        estado.textContent =
+            comprobantesPagoGlobal.length
+                ? (
+                    `${comprobantesPagoGlobal.length} `
+                    + 'comprobante(s) encontrado(s).'
+                )
+                : (
+                    'No hay comprobantes en '
+                    + 'el periodo seleccionado.'
+                );
+
+    } catch (error) {
+        if (
+            numeroSolicitud
+            !== solicitudComprobantesPago
+        ) {
+            return;
+        }
+
+        console.error(
+            'Error al cargar comprobantes:',
+            error
+        );
+
+        comprobantesPagoGlobal = [];
+        comprobantesPagoFiltrados = [];
+
+        renderizarComprobantesPago();
+
+        estado.classList.add('error');
+
+        estado.textContent =
+            error.message
+            || 'No se pudieron cargar los comprobantes.';
+
+    } finally {
+        if (
+            numeroSolicitud
+            === solicitudComprobantesPago
+        ) {
+            boton.disabled = false;
+            boton.textContent = 'Actualizar';
+        }
+    }
+}
+
+// ==========================================
 // GASTOS Y SALIDAS
 // ==========================================
+
+
 let movimientosGastosGlobal = [];
 let filtrosGastosInicializados = false;
 
@@ -2750,3 +5037,2856 @@ function restablecerFiltrosGastos() {
     establecerMesActualGastos();
     filtrarGastos();
 }
+
+// ==========================================
+// CRM: PROSPECTOS
+// ==========================================
+let prospectosGlobal = [];
+let prospectosFiltrados = [];
+let prospectoEditandoId = null;
+let solicitudProspectos = 0;
+let prospectoSeguimientoId = null;
+let seguimientosProspectoGlobal = [];
+let solicitudSeguimientosProspecto = 0;
+
+const estatusProspectosActivos = new Set([
+    'Nuevo',
+    'Contactado',
+    'Calificado'
+]);
+
+function valorFechaLocalProspecto(valor) {
+    const fecha = valor instanceof Date
+        ? new Date(valor.getTime())
+        : new Date(valor);
+
+    if (Number.isNaN(fecha.getTime())) return '';
+
+    const desplazamiento = fecha.getTimezoneOffset() * 60000;
+    return new Date(fecha.getTime() - desplazamiento)
+        .toISOString()
+        .slice(0, 16);
+}
+
+function siguienteSeguimientoPredeterminado() {
+    const fecha = new Date();
+    fecha.setDate(fecha.getDate() + 1);
+    fecha.setHours(10, 0, 0, 0);
+    return valorFechaLocalProspecto(fecha);
+}
+
+function limitesDiaProspecto() {
+    const inicio = new Date();
+    inicio.setHours(0, 0, 0, 0);
+
+    const fin = new Date(inicio);
+    fin.setDate(fin.getDate() + 1);
+
+    const proximos = new Date(inicio);
+    proximos.setDate(proximos.getDate() + 8);
+
+    return { inicio, fin, proximos };
+}
+
+function tipoSeguimientoProspecto(prospecto) {
+    if (
+        !estatusProspectosActivos.has(prospecto.estatus)
+        || !prospecto.proximo_seguimiento
+    ) {
+        return 'sin-fecha';
+    }
+
+    const seguimiento = new Date(prospecto.proximo_seguimiento);
+    if (Number.isNaN(seguimiento.getTime())) return 'sin-fecha';
+
+    const ahora = new Date();
+    const { inicio, fin, proximos } = limitesDiaProspecto();
+
+    if (seguimiento < ahora) return 'vencidos';
+    if (seguimiento >= inicio && seguimiento < fin) return 'hoy';
+    if (seguimiento >= fin && seguimiento < proximos) return 'proximos';
+    return 'posterior';
+}
+
+function actualizarResumenProspectos() {
+    const activos = prospectosGlobal.filter(
+        prospecto => estatusProspectosActivos.has(prospecto.estatus)
+    );
+
+    const vencidos = activos.filter(
+        prospecto => tipoSeguimientoProspecto(prospecto) === 'vencidos'
+    );
+
+    const hoy = activos.filter(
+        prospecto => tipoSeguimientoProspecto(prospecto) === 'hoy'
+    );
+
+    const calificados = prospectosGlobal.filter(
+        prospecto => prospecto.estatus === 'Calificado'
+    );
+
+    document.getElementById('prospectos-resumen-activos').textContent = activos.length;
+    document.getElementById('prospectos-resumen-vencidos').textContent = vencidos.length;
+    document.getElementById('prospectos-resumen-hoy').textContent = hoy.length;
+    document.getElementById('prospectos-resumen-calificados').textContent = calificados.length;
+}
+
+function claseEstatusProspecto(estatus) {
+    const clases = {
+        Nuevo: 'badge-neutral',
+        Contactado: 'badge-warning',
+        Calificado: 'badge-success',
+        Convertido: 'badge-success',
+        Descartado: 'badge-danger'
+    };
+
+    return clases[estatus] || 'badge-neutral';
+}
+
+function renderizarProspectos() {
+    const tabla = document.getElementById('tabla-prospectos-body');
+    const resumen = document.getElementById('prospectos-resumen-registros');
+
+    resumen.textContent = (
+        `${prospectosFiltrados.length} de `
+        + `${prospectosGlobal.length} prospecto(s)`
+    );
+
+    actualizarResumenProspectos();
+
+    if (!prospectosFiltrados.length) {
+        tabla.innerHTML = `
+            <tr>
+                <td colspan="8" style="text-align:center;">
+                    No hay prospectos que coincidan con los filtros.
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
+    tabla.innerHTML = prospectosFiltrados.map(prospecto => {
+        const tipoSeguimiento = tipoSeguimientoProspecto(prospecto);
+        const claseSeguimiento = tipoSeguimiento === 'vencidos'
+            ? 'badge-danger'
+            : tipoSeguimiento === 'hoy' ? 'badge-warning' : '';
+
+        const seguimiento = prospecto.proximo_seguimiento
+            ? formatearFechaCXC(prospecto.proximo_seguimiento, true)
+            : 'Sin seguimiento pendiente';
+
+        const contactoPrincipal = prospecto.tipo_prospecto === 'Empresa'
+            ? prospecto.contacto_principal || 'Sin contacto principal'
+            : prospecto.nombre;
+
+        const idProspecto = Number(prospecto.id_prospecto);
+        const botonSeguimiento = `
+            <button
+                type="button"
+                class="btn-table btn-table-view"
+                onclick="abrirSeguimientoProspecto(${idProspecto})"
+            >
+                ${prospecto.estatus === 'Convertido' ? 'Historial' : 'Seguimiento'}
+            </button>
+        `;
+
+        const botonEditar = prospecto.estatus === 'Convertido'
+            ? '<span class="badge-neutral">Cerrado</span>'
+            : `
+                <button
+                    type="button"
+                    class="btn-table btn-table-edit"
+                    onclick="mostrarFormularioProspecto(${idProspecto})"
+                >
+                    Editar
+                </button>
+            `;
+
+        const accion = `
+            <div class="form-actions">
+                ${botonSeguimiento}
+                ${botonEditar}
+            </div>
+        `;
+
+        return `
+            <tr>
+                <td>
+                    <strong>${escaparHTML(prospecto.nombre)}</strong>
+                    <br>
+                    <span class="badge-neutral">
+                        ${escaparHTML(prospecto.tipo_prospecto)}
+                    </span>
+                </td>
+                <td>
+                    <div class="client-contact">
+                        <span>${escaparHTML(contactoPrincipal)}</span>
+                        <small>
+                            ${escaparHTML(prospecto.telefono || 'Sin telefono')}
+                            - ${escaparHTML(prospecto.email || 'Sin correo')}
+                        </small>
+                    </div>
+                </td>
+                <td>${escaparHTML(prospecto.interes_en)}</td>
+                <td>${escaparHTML(prospecto.origen || 'Sin origen')}</td>
+                <td>
+                    <span class="${claseEstatusProspecto(prospecto.estatus)}">
+                        ${escaparHTML(prospecto.estatus)}
+                    </span>
+                </td>
+                <td>
+                    ${
+                        claseSeguimiento
+                            ? `<span class="${claseSeguimiento}">${escaparHTML(seguimiento)}</span>`
+                            : escaparHTML(seguimiento)
+                    }
+                </td>
+                <td>${formatearFechaCXC(prospecto.fecha_actualizacion, true)}</td>
+                <td>${accion}</td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function filtrarProspectos() {
+    const busqueda = normalizarBusqueda(
+        document.getElementById('prospectos-busqueda').value
+    );
+
+    const tipo = document.getElementById('prospectos-filtro-tipo').value;
+    const estatus = document.getElementById('prospectos-filtro-estatus').value;
+    const seguimiento = document.getElementById(
+        'prospectos-filtro-seguimiento'
+    ).value;
+
+    prospectosFiltrados = prospectosGlobal.filter(prospecto => {
+        const contenido = normalizarBusqueda([
+            prospecto.nombre,
+            prospecto.contacto_principal,
+            prospecto.telefono,
+            prospecto.email,
+            prospecto.informacion_adicional,
+            prospecto.interes_en,
+            prospecto.origen,
+            prospecto.comentarios,
+            prospecto.motivo_descarte
+        ].join(' '));
+
+        const coincideSeguimiento = seguimiento === 'todos'
+            || tipoSeguimientoProspecto(prospecto) === seguimiento;
+
+        return (
+            (!busqueda || contenido.includes(busqueda))
+            && (tipo === 'todos' || prospecto.tipo_prospecto === tipo)
+            && (estatus === 'todos' || prospecto.estatus === estatus)
+            && coincideSeguimiento
+        );
+    });
+
+    renderizarProspectos();
+}
+
+async function obtenerProspectosAPI() {
+    const sesion = obtenerSesion();
+    const tabla = document.getElementById('tabla-prospectos-body');
+    const estado = document.getElementById('prospectos-estado');
+
+    if (!sesion || !sesion.id_empresa || !tabla || !estado) return;
+
+    const numeroSolicitud = ++solicitudProspectos;
+    tabla.innerHTML = `
+        <tr>
+            <td colspan="8" style="text-align:center;">
+                Cargando prospectos...
+            </td>
+        </tr>
+    `;
+    estado.classList.remove('error');
+    estado.textContent = 'Consultando prospectos...';
+
+    try {
+        const respuesta = await fetch(
+            `/api/prospectos/${sesion.id_empresa}`,
+            { cache: 'no-store' }
+        );
+        const resultado = await respuesta.json();
+
+        if (
+            !respuesta.ok
+            || resultado.status !== 'success'
+            || !Array.isArray(resultado.data)
+        ) {
+            throw new Error(
+                mensajeErrorAPI(
+                    resultado,
+                    'No se pudieron cargar los prospectos.'
+                )
+            );
+        }
+
+        if (numeroSolicitud !== solicitudProspectos) return;
+
+        prospectosGlobal = resultado.data;
+        filtrarProspectos();
+        estado.textContent = prospectosGlobal.length
+            ? `${prospectosGlobal.length} prospecto(s) cargado(s).`
+            : 'Todavia no hay prospectos registrados.';
+    } catch (error) {
+        if (numeroSolicitud !== solicitudProspectos) return;
+
+        console.error('Error al cargar prospectos:', error);
+        prospectosGlobal = [];
+        prospectosFiltrados = [];
+        renderizarProspectos();
+        estado.classList.add('error');
+        estado.textContent = error.message
+            || 'No se pudieron cargar los prospectos.';
+    }
+}
+
+function actualizarCamposProspecto() {
+    const tipo = document.getElementById('prospecto-tipo').value;
+    const estatus = document.getElementById('prospecto-estatus').value;
+    const esEmpresa = tipo === 'Empresa';
+    const descartado = estatus === 'Descartado';
+
+    const grupoContacto = document.getElementById('prospecto-contacto-grupo');
+    const contacto = document.getElementById('prospecto-contacto');
+    const etiquetaNombre = document.getElementById('prospecto-nombre-label');
+    const grupoSeguimiento = document.getElementById('prospecto-seguimiento-grupo');
+    const seguimiento = document.getElementById('prospecto-seguimiento');
+    const grupoMotivo = document.getElementById('prospecto-motivo-grupo');
+    const motivo = document.getElementById('prospecto-motivo');
+
+    grupoContacto.classList.toggle('oculto', !esEmpresa);
+    etiquetaNombre.textContent = esEmpresa
+        ? 'Empresa o razon social'
+        : 'Nombre completo';
+
+    if (!esEmpresa) contacto.value = '';
+
+    grupoSeguimiento.classList.toggle('oculto', descartado);
+    seguimiento.required = !descartado;
+
+    grupoMotivo.classList.toggle('oculto', !descartado);
+    motivo.required = descartado;
+
+    if (descartado) {
+        seguimiento.value = '';
+    } else {
+        motivo.value = '';
+        if (!seguimiento.value) {
+            seguimiento.value = siguienteSeguimientoPredeterminado();
+        }
+    }
+}
+
+function mostrarFormularioProspecto(idProspecto = null) {
+    const formulario = document.getElementById('formProspecto');
+    const contenedor = document.getElementById('form-prospecto-container');
+    const titulo = document.getElementById('form-prospecto-titulo');
+    const boton = document.getElementById('btn-guardar-prospecto');
+    const estado = document.getElementById('prospecto-form-estado');
+
+    formulario.reset();
+    estado.classList.remove('error');
+    estado.textContent = '';
+    prospectoEditandoId = idProspecto === null
+        ? null
+        : Number(idProspecto);
+
+    if (prospectoEditandoId === null) {
+        titulo.textContent = 'Registrar prospecto';
+        boton.textContent = 'Guardar prospecto';
+        document.getElementById('prospecto-tipo').value = 'Persona';
+        document.getElementById('prospecto-estatus').value = 'Nuevo';
+        document.getElementById('prospecto-seguimiento').value = (
+            siguienteSeguimientoPredeterminado()
+        );
+    } else {
+        const prospecto = prospectosGlobal.find(
+            item => Number(item.id_prospecto) === prospectoEditandoId
+        );
+
+        if (!prospecto) {
+            alert('No se encontro el prospecto. Actualiza la lista e intentalo de nuevo.');
+            return;
+        }
+
+        if (prospecto.estatus === 'Convertido') {
+            alert('Este prospecto ya se convirtio y debera administrarse desde Negociaciones.');
+            return;
+        }
+
+        titulo.textContent = `Editar prospecto #${prospecto.id_prospecto}`;
+        boton.textContent = 'Guardar cambios';
+        document.getElementById('prospecto-tipo').value = prospecto.tipo_prospecto;
+        document.getElementById('prospecto-nombre').value = prospecto.nombre || '';
+        document.getElementById('prospecto-contacto').value = prospecto.contacto_principal || '';
+        document.getElementById('prospecto-telefono').value = prospecto.telefono || '';
+        document.getElementById('prospecto-email').value = prospecto.email || '';
+        document.getElementById('prospecto-origen').value = prospecto.origen || '';
+        document.getElementById('prospecto-estatus').value = prospecto.estatus;
+        document.getElementById('prospecto-seguimiento').value = (
+            valorFechaLocalProspecto(prospecto.proximo_seguimiento)
+        );
+        document.getElementById('prospecto-interes').value = prospecto.interes_en || '';
+        document.getElementById('prospecto-informacion').value = prospecto.informacion_adicional || '';
+        document.getElementById('prospecto-comentarios').value = prospecto.comentarios || '';
+        document.getElementById('prospecto-motivo').value = prospecto.motivo_descarte || '';
+    }
+
+    actualizarCamposProspecto();
+    contenedor.classList.remove('oculto');
+    contenedor.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    document.getElementById('prospecto-nombre').focus();
+}
+
+function ocultarFormularioProspecto() {
+    document.getElementById('form-prospecto-container').classList.add('oculto');
+    document.getElementById('formProspecto').reset();
+    document.getElementById('prospecto-form-estado').textContent = '';
+    prospectoEditandoId = null;
+}
+
+async function guardarProspecto(evento) {
+    evento.preventDefault();
+
+    const sesion = obtenerSesion();
+    const boton = document.getElementById('btn-guardar-prospecto');
+    const estadoFormulario = document.getElementById('prospecto-form-estado');
+    const tipo = document.getElementById('prospecto-tipo').value;
+    const estatus = document.getElementById('prospecto-estatus').value;
+    const seguimientoLocal = document.getElementById('prospecto-seguimiento').value;
+
+    if (!sesion || !sesion.id_empresa) return;
+
+    const payload = {
+        id_empresa: Number(sesion.id_empresa),
+        tipo_prospecto: tipo,
+        nombre: document.getElementById('prospecto-nombre').value.trim(),
+        contacto_principal: tipo === 'Empresa'
+            ? document.getElementById('prospecto-contacto').value.trim() || null
+            : null,
+        telefono: document.getElementById('prospecto-telefono').value.trim() || null,
+        email: document.getElementById('prospecto-email').value.trim() || null,
+        informacion_adicional: document.getElementById('prospecto-informacion').value.trim() || null,
+        interes_en: document.getElementById('prospecto-interes').value.trim(),
+        origen: document.getElementById('prospecto-origen').value.trim() || null,
+        comentarios: document.getElementById('prospecto-comentarios').value.trim() || null,
+        proximo_seguimiento: estatus === 'Descartado'
+            ? null
+            : seguimientoLocal ? new Date(seguimientoLocal).toISOString() : null,
+        estatus,
+        motivo_descarte: estatus === 'Descartado'
+            ? document.getElementById('prospecto-motivo').value.trim() || null
+            : null
+    };
+
+    if (!payload.nombre || !payload.interes_en) {
+        estadoFormulario.classList.add('error');
+        estadoFormulario.textContent = 'Completa el nombre y el interes del prospecto.';
+        return;
+    }
+
+    if (estatus !== 'Descartado' && !payload.proximo_seguimiento) {
+        estadoFormulario.classList.add('error');
+        estadoFormulario.textContent = 'Indica el proximo seguimiento.';
+        return;
+    }
+
+    if (estatus === 'Descartado' && !payload.motivo_descarte) {
+        estadoFormulario.classList.add('error');
+        estadoFormulario.textContent = 'Explica por que se descarto el prospecto.';
+        return;
+    }
+
+    const editando = prospectoEditandoId !== null;
+    const url = editando
+        ? `/api/prospectos/${prospectoEditandoId}`
+        : '/api/prospectos';
+
+    boton.disabled = true;
+    boton.textContent = editando ? 'Actualizando...' : 'Guardando...';
+    estadoFormulario.classList.remove('error');
+    estadoFormulario.textContent = 'Guardando informacion...';
+
+    try {
+        const respuesta = await fetch(url, {
+            method: editando ? 'PUT' : 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const resultado = await respuesta.json();
+
+        if (!respuesta.ok || !resultado.exito) {
+            throw new Error(
+                mensajeErrorAPI(
+                    resultado,
+                    'No se pudo guardar el prospecto.'
+                )
+            );
+        }
+
+        ocultarFormularioProspecto();
+        await obtenerProspectosAPI();
+        alert(resultado.mensaje || 'Prospecto guardado exitosamente.');
+    } catch (error) {
+        console.error('Error al guardar prospecto:', error);
+        estadoFormulario.classList.add('error');
+        estadoFormulario.textContent = error.message
+            || 'No se pudo guardar el prospecto.';
+    } finally {
+        boton.disabled = false;
+        boton.textContent = editando
+            ? 'Guardar cambios'
+            : 'Guardar prospecto';
+    }
+}
+
+function restablecerFiltrosProspectos() {
+    document.getElementById('prospectos-busqueda').value = '';
+    document.getElementById('prospectos-filtro-tipo').value = 'todos';
+    document.getElementById('prospectos-filtro-estatus').value = 'todos';
+    document.getElementById('prospectos-filtro-seguimiento').value = 'todos';
+    filtrarProspectos();
+}
+
+function actualizarCamposSeguimientoProspecto() {
+    const estatus = document.getElementById('seguimiento-estatus').value;
+    const descartado = estatus === 'Descartado';
+
+    const grupoAccion = document.getElementById(
+        'seguimiento-proxima-accion-grupo'
+    );
+    const proximaAccion = document.getElementById(
+        'seguimiento-proxima-accion'
+    );
+    const grupoFecha = document.getElementById(
+        'seguimiento-proxima-fecha-grupo'
+    );
+    const proximaFecha = document.getElementById(
+        'seguimiento-proxima-fecha'
+    );
+    const grupoMotivo = document.getElementById(
+        'seguimiento-motivo-grupo'
+    );
+    const motivo = document.getElementById('seguimiento-motivo');
+
+    grupoAccion.classList.toggle('oculto', descartado);
+    grupoFecha.classList.toggle('oculto', descartado);
+    grupoMotivo.classList.toggle('oculto', !descartado);
+
+    proximaAccion.required = !descartado;
+    proximaFecha.required = !descartado;
+    motivo.required = descartado;
+
+    if (descartado) {
+        proximaAccion.value = '';
+        proximaFecha.value = '';
+    } else {
+        motivo.value = '';
+        if (!proximaFecha.value) {
+            proximaFecha.value = siguienteSeguimientoPredeterminado();
+        }
+    }
+}
+
+function limpiarFormularioSeguimientoProspecto() {
+    const formulario = document.getElementById(
+        'formSeguimientoProspecto'
+    );
+    const estado = document.getElementById('seguimiento-form-estado');
+
+    formulario.reset();
+    estado.classList.remove('error');
+    estado.textContent = '';
+
+    const prospecto = prospectosGlobal.find(
+        item => Number(item.id_prospecto) === prospectoSeguimientoId
+    );
+
+    document.getElementById('seguimiento-fecha').value = (
+        valorFechaLocalProspecto(new Date())
+    );
+    document.getElementById('seguimiento-estatus').value = (
+        prospecto && prospecto.estatus !== 'Convertido'
+            ? prospecto.estatus
+            : 'Nuevo'
+    );
+    document.getElementById('seguimiento-proxima-fecha').value = (
+        prospecto && prospecto.proximo_seguimiento
+            ? valorFechaLocalProspecto(prospecto.proximo_seguimiento)
+            : siguienteSeguimientoPredeterminado()
+    );
+
+    actualizarCamposSeguimientoProspecto();
+}
+
+function renderizarSeguimientosProspecto() {
+    const tabla = document.getElementById(
+        'tabla-seguimientos-prospecto-body'
+    );
+    const resumen = document.getElementById(
+        'seguimientos-resumen-registros'
+    );
+
+    resumen.textContent = (
+        `${seguimientosProspectoGlobal.length} seguimiento(s) registrado(s)`
+    );
+
+    if (!seguimientosProspectoGlobal.length) {
+        tabla.innerHTML = `
+            <tr>
+                <td colspan="7" style="text-align:center;">
+                    Todavia no hay seguimientos para este prospecto.
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
+    tabla.innerHTML = seguimientosProspectoGlobal.map(item => {
+        const cambioEstatus = (
+            `${item.estatus_anterior || 'Sin estatus'} -> `
+            + `${item.estatus_nuevo || 'Sin estatus'}`
+        );
+
+        const proximaAccion = item.estatus_nuevo === 'Descartado'
+            ? `Motivo: ${item.motivo_descarte || 'Sin motivo'}`
+            : item.proxima_accion || 'Sin accion';
+
+        const proximoContacto = item.proximo_seguimiento
+            ? formatearFechaCXC(item.proximo_seguimiento, true)
+            : 'Sin proximo contacto';
+
+        return `
+            <tr>
+                <td>${formatearFechaCXC(item.fecha_seguimiento, true)}</td>
+                <td>${escaparHTML(item.tipo || '')}</td>
+                <td>${escaparHTML(item.resultado || '')}</td>
+                <td>${escaparHTML(cambioEstatus)}</td>
+                <td>${escaparHTML(item.comentarios || '')}</td>
+                <td>${escaparHTML(proximaAccion)}</td>
+                <td>${escaparHTML(proximoContacto)}</td>
+            </tr>
+        `;
+    }).join('');
+}
+
+async function obtenerSeguimientosProspecto() {
+    const sesion = obtenerSesion();
+    const estado = document.getElementById('seguimientos-estado');
+    const tabla = document.getElementById(
+        'tabla-seguimientos-prospecto-body'
+    );
+
+    if (
+        !sesion
+        || !sesion.id_empresa
+        || !prospectoSeguimientoId
+        || !estado
+        || !tabla
+    ) {
+        return;
+    }
+
+    const idProspectoConsultado = prospectoSeguimientoId;
+    const numeroSolicitud = ++solicitudSeguimientosProspecto;
+
+    estado.classList.remove('error');
+    estado.textContent = 'Consultando seguimientos...';
+    tabla.innerHTML = `
+        <tr>
+            <td colspan="7" style="text-align:center;">
+                Cargando historial...
+            </td>
+        </tr>
+    `;
+
+    try {
+        const parametros = new URLSearchParams({
+            id_empresa: String(sesion.id_empresa)
+        });
+
+        const respuesta = await fetch(
+            `/api/prospectos/${idProspectoConsultado}/seguimientos?`
+            + parametros.toString(),
+            { cache: 'no-store' }
+        );
+        const resultado = await respuesta.json();
+
+        if (
+            !respuesta.ok
+            || !resultado.exito
+            || !Array.isArray(resultado.data)
+        ) {
+            throw new Error(
+                mensajeErrorAPI(
+                    resultado,
+                    'No se pudieron cargar los seguimientos.'
+                )
+            );
+        }
+
+        if (
+            numeroSolicitud !== solicitudSeguimientosProspecto
+            || idProspectoConsultado !== prospectoSeguimientoId
+        ) {
+            return;
+        }
+
+        seguimientosProspectoGlobal = resultado.data;
+        renderizarSeguimientosProspecto();
+        estado.textContent = seguimientosProspectoGlobal.length
+            ? 'Historial actualizado.'
+            : 'Este prospecto aun no tiene seguimientos.';
+    } catch (error) {
+        if (
+            numeroSolicitud !== solicitudSeguimientosProspecto
+            || idProspectoConsultado !== prospectoSeguimientoId
+        ) {
+            return;
+        }
+
+        console.error('Error al cargar seguimientos:', error);
+        seguimientosProspectoGlobal = [];
+        renderizarSeguimientosProspecto();
+        estado.classList.add('error');
+        estado.textContent = error.message
+            || 'No se pudieron cargar los seguimientos.';
+    }
+}
+
+function abrirSeguimientoProspecto(idProspecto) {
+    const prospecto = prospectosGlobal.find(
+        item => Number(item.id_prospecto) === Number(idProspecto)
+    );
+
+    if (!prospecto) {
+        alert('No se encontro el prospecto. Actualiza la lista e intentalo de nuevo.');
+        return;
+    }
+
+    prospectoSeguimientoId = Number(idProspecto);
+    seguimientosProspectoGlobal = [];
+
+    document.getElementById('seguimiento-prospecto-titulo').textContent = (
+        `Seguimiento: ${prospecto.nombre}`
+    );
+    document.getElementById('seguimiento-prospecto-resumen').textContent = (
+        `${prospecto.tipo_prospecto} - ${prospecto.interes_en}`
+    );
+
+    ocultarFormularioProspecto();
+
+    const contenedor = document.getElementById(
+        'seguimiento-prospecto-container'
+    );
+    const formulario = document.getElementById(
+        'formSeguimientoProspecto'
+    );
+
+    const convertido = prospecto.estatus === 'Convertido';
+    formulario.classList.toggle('oculto', convertido);
+
+    limpiarFormularioSeguimientoProspecto();
+    contenedor.classList.remove('oculto');
+    contenedor.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    obtenerSeguimientosProspecto();
+}
+
+function cerrarSeguimientoProspecto() {
+    solicitudSeguimientosProspecto += 1;
+    prospectoSeguimientoId = null;
+    seguimientosProspectoGlobal = [];
+
+    document.getElementById(
+        'seguimiento-prospecto-container'
+    ).classList.add('oculto');
+    document.getElementById('formSeguimientoProspecto').reset();
+    document.getElementById('seguimiento-form-estado').textContent = '';
+    document.getElementById('seguimientos-estado').textContent = '';
+    document.getElementById('seguimientos-resumen-registros').textContent = '';
+    document.getElementById(
+        'tabla-seguimientos-prospecto-body'
+    ).innerHTML = '';
+}
+
+async function guardarSeguimientoProspecto(evento) {
+    evento.preventDefault();
+
+    const sesion = obtenerSesion();
+    const estado = document.getElementById('seguimiento-form-estado');
+    const boton = document.getElementById('btn-guardar-seguimiento');
+    const estatus = document.getElementById('seguimiento-estatus').value;
+
+    if (
+        !sesion
+        || !sesion.id_empresa
+        || !sesion.id_usuario
+        || !prospectoSeguimientoId
+    ) {
+        estado.classList.add('error');
+        estado.textContent = 'La sesion no contiene empresa o usuario valido.';
+        return;
+    }
+
+    const fechaContacto = document.getElementById(
+        'seguimiento-fecha'
+    ).value;
+    const proximaFecha = document.getElementById(
+        'seguimiento-proxima-fecha'
+    ).value;
+
+    const payload = {
+        id_empresa: Number(sesion.id_empresa),
+        id_usuario: Number(sesion.id_usuario),
+        tipo: document.getElementById('seguimiento-tipo').value,
+        fecha_seguimiento: fechaContacto
+            ? new Date(fechaContacto).toISOString()
+            : null,
+        resultado: document.getElementById(
+            'seguimiento-resultado'
+        ).value,
+        comentarios: document.getElementById(
+            'seguimiento-comentarios'
+        ).value.trim(),
+        proxima_accion: estatus === 'Descartado'
+            ? null
+            : document.getElementById(
+                'seguimiento-proxima-accion'
+            ).value.trim() || null,
+        proximo_seguimiento: estatus === 'Descartado'
+            ? null
+            : proximaFecha
+                ? new Date(proximaFecha).toISOString()
+                : null,
+        estatus_nuevo: estatus,
+        motivo_descarte: estatus === 'Descartado'
+            ? document.getElementById(
+                'seguimiento-motivo'
+            ).value.trim() || null
+            : null
+    };
+
+    if (!payload.fecha_seguimiento || !payload.comentarios) {
+        estado.classList.add('error');
+        estado.textContent = 'Completa la fecha y los comentarios del contacto.';
+        return;
+    }
+
+    if (
+        estatus !== 'Descartado'
+        && (!payload.proxima_accion || !payload.proximo_seguimiento)
+    ) {
+        estado.classList.add('error');
+        estado.textContent = 'Indica la proxima accion y su fecha.';
+        return;
+    }
+
+    if (estatus === 'Descartado' && !payload.motivo_descarte) {
+        estado.classList.add('error');
+        estado.textContent = 'Indica el motivo de descarte.';
+        return;
+    }
+
+    boton.disabled = true;
+    boton.textContent = 'Guardando...';
+    estado.classList.remove('error');
+    estado.textContent = 'Guardando seguimiento...';
+
+    try {
+        const respuesta = await fetch(
+            `/api/prospectos/${prospectoSeguimientoId}/seguimientos`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            }
+        );
+        const resultado = await respuesta.json();
+
+        if (!respuesta.ok || !resultado.exito) {
+            throw new Error(
+                mensajeErrorAPI(
+                    resultado,
+                    'No se pudo guardar el seguimiento.'
+                )
+            );
+        }
+
+        await obtenerProspectosAPI();
+        await obtenerSeguimientosProspecto();
+        limpiarFormularioSeguimientoProspecto();
+        estado.textContent = resultado.mensaje
+            || 'Seguimiento guardado exitosamente.';
+    } catch (error) {
+        console.error('Error al guardar seguimiento:', error);
+        estado.classList.add('error');
+        estado.textContent = error.message
+            || 'No se pudo guardar el seguimiento.';
+    } finally {
+        boton.disabled = false;
+        boton.textContent = 'Guardar seguimiento';
+    }
+}
+
+// ==========================================
+// CRM: EMBUDO Y COTIZACIONES
+// ==========================================
+let oportunidadesCRMGlobal = [];
+let oportunidadesCRMFiltradas = [];
+let prospectosCalificadosCRM = [];
+let oportunidadCRMEditandoId = null;
+let oportunidadCotizacionCRMId = null;
+let cotizacionCRMSeleccionadaId = null;
+let solicitudEmbudoCRM = 0;
+let secuenciaPartidaCotizacionCRM = 0;
+
+const etapasEmbudoCRM = [
+    'Interes detectado',
+    'Preparando cotizacion',
+    'Cotizacion enviada',
+    'En revision',
+    'Esperando decision'
+];
+
+const probabilidadEtapaCRM = {
+    'Interes detectado': 10,
+    'Preparando cotizacion': 30,
+    'Cotizacion enviada': 50,
+    'En revision': 70,
+    'Esperando decision': 85
+};
+
+const columnasEmbudoCRM = {
+    'Interes detectado': {
+        cuerpo: 'embudo-columna-interes',
+        conteo: 'embudo-conteo-interes'
+    },
+    'Preparando cotizacion': {
+        cuerpo: 'embudo-columna-preparando',
+        conteo: 'embudo-conteo-preparando'
+    },
+    'Cotizacion enviada': {
+        cuerpo: 'embudo-columna-enviada',
+        conteo: 'embudo-conteo-enviada'
+    },
+    'En revision': {
+        cuerpo: 'embudo-columna-revision',
+        conteo: 'embudo-conteo-revision'
+    },
+    'Esperando decision': {
+        cuerpo: 'embudo-columna-decision',
+        conteo: 'embudo-conteo-decision'
+    }
+};
+
+function oportunidadCRMPorId(idOportunidad) {
+    return oportunidadesCRMGlobal.find(
+        item => Number(item.id_oportunidad) === Number(idOportunidad)
+    ) || null;
+}
+
+function cotizacionCRMConOportunidad(idCotizacion) {
+    for (const oportunidad of oportunidadesCRMGlobal) {
+        const cotizacion = (oportunidad.cotizaciones || []).find(
+            item => Number(item.id_cotizacion) === Number(idCotizacion)
+        );
+
+        if (cotizacion) return { cotizacion, oportunidad };
+    }
+
+    return null;
+}
+
+function opcionesEtapaEmbudoCRM(etapaActual) {
+    return etapasEmbudoCRM.map(etapa => `
+        <option
+            value="${escaparHTML(etapa)}"
+            ${etapa === etapaActual ? 'selected' : ''}
+        >
+            ${escaparHTML(etapa)}
+        </option>
+    `).join('');
+}
+
+function actualizarResumenEmbudoCRM() {
+    const valor = oportunidadesCRMGlobal.reduce(
+        (total, item) => total + Number(item.valor_estimado || 0),
+        0
+    );
+
+    const enviadas = oportunidadesCRMGlobal.filter(
+        item => item.cotizacion_actual?.estado === 'Enviada'
+    ).length;
+
+    const esperando = oportunidadesCRMGlobal.filter(
+        item => item.etapa === 'Esperando decision'
+    ).length;
+
+    document.getElementById(
+        'embudo-resumen-oportunidades'
+    ).textContent = oportunidadesCRMGlobal.length;
+    document.getElementById(
+        'embudo-resumen-valor'
+    ).textContent = formatearMoneda(valor);
+    document.getElementById(
+        'embudo-resumen-enviadas'
+    ).textContent = enviadas;
+    document.getElementById(
+        'embudo-resumen-decision'
+    ).textContent = esperando;
+}
+
+function tarjetaOportunidadCRM(oportunidad) {
+    const prospecto = oportunidad.prospecto || {};
+    const seguimiento = oportunidad.ultimo_seguimiento || {};
+    const cotizacion = oportunidad.cotizacion_actual;
+
+    const nombreProspecto = prospecto.nombre
+        || `Prospecto #${oportunidad.id_prospecto}`;
+    const interes = prospecto.interes_en || 'Sin interes registrado';
+    const proximaAccion = seguimiento.proxima_accion
+        || 'Sin proxima accion registrada';
+    const proximoContacto = (
+        seguimiento.proximo_seguimiento
+        || prospecto.proximo_seguimiento
+    );
+
+    const resumenCotizacion = cotizacion
+        ? `
+            <div class="crm-card-quote">
+                <strong>${escaparHTML(cotizacion.folio)}</strong>
+                <p>
+                    ${escaparHTML(cotizacion.estado)} -
+                    ${formatearMoneda(cotizacion.total)}
+                </p>
+                <p>
+                    Vigencia: ${formatearFechaCXC(cotizacion.vigencia_hasta)}
+                </p>
+            </div>
+        `
+        : `
+            <div class="crm-card-quote">
+                <p>Sin cotizacion registrada.</p>
+            </div>
+        `;
+
+    return `
+        <article class="crm-opportunity-card">
+            <span class="crm-card-prospect">
+                ${escaparHTML(nombreProspecto)}
+            </span>
+            <h4>${escaparHTML(oportunidad.titulo)}</h4>
+            <p>${escaparHTML(interes)}</p>
+
+            <div class="crm-card-metrics">
+                <div>
+                    <span>Valor</span>
+                    <strong>${formatearMoneda(oportunidad.valor_estimado)}</strong>
+                </div>
+                <div>
+                    <span>Probabilidad</span>
+                    <strong>${Number(oportunidad.probabilidad || 0)}%</strong>
+                </div>
+            </div>
+
+            <div class="crm-card-next-action">
+                <strong>Proxima accion</strong>
+                <p>${escaparHTML(proximaAccion)}</p>
+                <p>
+                    ${
+                        proximoContacto
+                            ? formatearFechaCXC(proximoContacto, true)
+                            : 'Sin fecha programada'
+                    }
+                </p>
+            </div>
+
+            ${resumenCotizacion}
+
+            <div class="crm-card-actions">
+                <select
+                    aria-label="Cambiar etapa"
+                    onchange="cambiarEtapaOportunidadCRM(
+                        ${Number(oportunidad.id_oportunidad)},
+                        this
+                    )"
+                >
+                    ${opcionesEtapaEmbudoCRM(oportunidad.etapa)}
+                </select>
+                <button
+                    type="button"
+                    class="btn-table btn-table-edit"
+                    onclick="mostrarFormularioOportunidadCRM(
+                        ${Number(oportunidad.id_oportunidad)}
+                    )"
+                >
+                    Editar
+                </button>
+                <button
+                    type="button"
+                    class="btn-table btn-table-view"
+                    onclick="mostrarFormularioCotizacionCRM(
+                        ${Number(oportunidad.id_oportunidad)}
+                    )"
+                >
+                    Cotizar
+                </button>
+                <button
+                    type="button"
+                    class="btn-table crm-btn-close-deal"
+                    onclick="mostrarFormularioCierreNegociacionCRM(
+                        ${Number(oportunidad.id_oportunidad)}
+                    )"
+                >
+                    Cerrar
+                </button>
+            </div>
+        </article>
+    `;
+}
+
+function renderizarEmbudoCRM() {
+    actualizarResumenEmbudoCRM();
+
+    etapasEmbudoCRM.forEach(etapa => {
+        const configuracion = columnasEmbudoCRM[etapa];
+        const cuerpo = document.getElementById(configuracion.cuerpo);
+        const conteo = document.getElementById(configuracion.conteo);
+        const oportunidades = oportunidadesCRMFiltradas.filter(
+            item => item.etapa === etapa
+        );
+
+        conteo.textContent = oportunidades.length;
+        cuerpo.innerHTML = oportunidades.length
+            ? oportunidades.map(tarjetaOportunidadCRM).join('')
+            : '<p class="crm-empty-stage">Sin oportunidades en esta etapa.</p>';
+    });
+}
+
+function filtrarEmbudoCRM() {
+    const busqueda = normalizarBusqueda(
+        document.getElementById('embudo-busqueda').value
+    );
+    const etapa = document.getElementById('embudo-filtro-etapa').value;
+
+    oportunidadesCRMFiltradas = oportunidadesCRMGlobal.filter(item => {
+        const prospecto = item.prospecto || {};
+        const folios = (item.cotizaciones || [])
+            .map(cotizacion => cotizacion.folio)
+            .join(' ');
+
+        const contenido = normalizarBusqueda([
+            item.titulo,
+            item.notas,
+            item.etapa,
+            prospecto.nombre,
+            prospecto.contacto_principal,
+            prospecto.interes_en,
+            folios
+        ].join(' '));
+
+        return (
+            (!busqueda || contenido.includes(busqueda))
+            && (etapa === 'todas' || item.etapa === etapa)
+        );
+    });
+
+    renderizarEmbudoCRM();
+}
+
+function restablecerFiltrosEmbudoCRM() {
+    document.getElementById('embudo-busqueda').value = '';
+    document.getElementById('embudo-filtro-etapa').value = 'todas';
+    filtrarEmbudoCRM();
+}
+
+async function obtenerEmbudoCRM() {
+    const sesion = obtenerSesion();
+    const estado = document.getElementById('embudo-estado');
+
+    if (!sesion || !sesion.id_empresa || !estado) return;
+
+    const numeroSolicitud = ++solicitudEmbudoCRM;
+    estado.classList.remove('error');
+    estado.textContent = 'Consultando embudo y cotizaciones...';
+
+    try {
+        const respuesta = await fetch(
+            `/api/crm/embudo/${sesion.id_empresa}`,
+            { cache: 'no-store' }
+        );
+        const resultado = await respuesta.json();
+
+        if (
+            !respuesta.ok
+            || !resultado.exito
+            || !resultado.data
+            || !Array.isArray(resultado.data.oportunidades)
+            || !Array.isArray(resultado.data.prospectos_calificados)
+        ) {
+            throw new Error(
+                mensajeErrorAPI(
+                    resultado,
+                    'No se pudo cargar el embudo.'
+                )
+            );
+        }
+
+        if (numeroSolicitud !== solicitudEmbudoCRM) return;
+
+        oportunidadesCRMGlobal = resultado.data.oportunidades;
+        prospectosCalificadosCRM = (
+            resultado.data.prospectos_calificados
+        );
+        filtrarEmbudoCRM();
+
+        estado.textContent = oportunidadesCRMGlobal.length
+            ? `${oportunidadesCRMGlobal.length} oportunidad(es) activa(s).`
+            : 'Todavia no hay oportunidades activas.';
+    } catch (error) {
+        if (numeroSolicitud !== solicitudEmbudoCRM) return;
+
+        console.error('Error al cargar el embudo CRM:', error);
+        oportunidadesCRMGlobal = [];
+        oportunidadesCRMFiltradas = [];
+        prospectosCalificadosCRM = [];
+        renderizarEmbudoCRM();
+        estado.classList.add('error');
+        estado.textContent = error.message
+            || 'No se pudo cargar el embudo.';
+    }
+}
+
+function prospectosDisponiblesOportunidadCRM(idActual = null) {
+    const prospectosOcupados = new Set(
+        oportunidadesCRMGlobal
+            .filter(
+                item => Number(item.id_oportunidad) !== Number(idActual)
+            )
+            .map(item => Number(item.id_prospecto))
+    );
+
+    return prospectosCalificadosCRM.filter(
+        prospecto => !prospectosOcupados.has(
+            Number(prospecto.id_prospecto)
+        )
+    );
+}
+
+function llenarSelectorProspectosOportunidadCRM(idSeleccionado = null) {
+    const selector = document.getElementById('oportunidad-prospecto');
+    const prospectos = prospectosDisponiblesOportunidadCRM(
+        oportunidadCRMEditandoId
+    );
+
+    selector.innerHTML = prospectos.length
+        ? `
+            <option value="">Selecciona un prospecto</option>
+            ${prospectos.map(prospecto => `
+                <option
+                    value="${Number(prospecto.id_prospecto)}"
+                    ${
+                        Number(prospecto.id_prospecto)
+                        === Number(idSeleccionado)
+                            ? 'selected'
+                            : ''
+                    }
+                >
+                    ${escaparHTML(prospecto.nombre)}
+                </option>
+            `).join('')}
+        `
+        : '<option value="">No hay prospectos calificados disponibles</option>';
+}
+
+function sincronizarProbabilidadEtapaCRM() {
+    const etapa = document.getElementById('oportunidad-etapa').value;
+    document.getElementById('oportunidad-probabilidad').value = (
+        probabilidadEtapaCRM[etapa] ?? 0
+    );
+}
+
+function mostrarFormularioOportunidadCRM(idOportunidad = null) {
+    const formulario = document.getElementById('formOportunidadCRM');
+    const contenedor = document.getElementById(
+        'form-oportunidad-container'
+    );
+    const titulo = document.getElementById('form-oportunidad-titulo');
+    const boton = document.getElementById('btn-guardar-oportunidad');
+    const estado = document.getElementById('oportunidad-form-estado');
+    const selector = document.getElementById('oportunidad-prospecto');
+
+    oportunidadCRMEditandoId = idOportunidad === null
+        ? null
+        : Number(idOportunidad);
+
+    formulario.reset();
+    estado.classList.remove('error');
+    estado.textContent = '';
+
+    if (oportunidadCRMEditandoId === null) {
+        const disponibles = prospectosDisponiblesOportunidadCRM();
+        if (!disponibles.length) {
+            alert(
+                'No hay prospectos Calificados disponibles. '
+                + 'Califica un prospecto antes de crear la oportunidad.'
+            );
+            return;
+        }
+
+        titulo.textContent = 'Nueva oportunidad';
+        boton.textContent = 'Guardar oportunidad';
+        llenarSelectorProspectosOportunidadCRM();
+        selector.disabled = false;
+        document.getElementById('oportunidad-etapa').value = (
+            'Interes detectado'
+        );
+        document.getElementById('oportunidad-valor').value = '0';
+        sincronizarProbabilidadEtapaCRM();
+    } else {
+        const oportunidad = oportunidadCRMPorId(
+            oportunidadCRMEditandoId
+        );
+        if (!oportunidad) {
+            alert('No se encontro la oportunidad. Actualiza el embudo.');
+            return;
+        }
+
+        titulo.textContent = (
+            `Editar oportunidad #${oportunidad.id_oportunidad}`
+        );
+        boton.textContent = 'Guardar cambios';
+        llenarSelectorProspectosOportunidadCRM(
+            oportunidad.id_prospecto
+        );
+        selector.disabled = true;
+        document.getElementById('oportunidad-titulo').value = (
+            oportunidad.titulo || ''
+        );
+        document.getElementById('oportunidad-etapa').value = (
+            oportunidad.etapa
+        );
+        document.getElementById('oportunidad-valor').value = (
+            Number(oportunidad.valor_estimado || 0)
+        );
+        document.getElementById('oportunidad-probabilidad').value = (
+            Number(oportunidad.probabilidad || 0)
+        );
+        document.getElementById('oportunidad-notas').value = (
+            oportunidad.notas || ''
+        );
+    }
+
+    cerrarFormularioCotizacionCRM();
+    cerrarVistaCotizacionCRM();
+    cerrarFormularioCierreNegociacionCRM();
+    contenedor.classList.remove('oculto');
+    contenedor.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function ocultarFormularioOportunidadCRM() {
+    oportunidadCRMEditandoId = null;
+    document.getElementById(
+        'form-oportunidad-container'
+    ).classList.add('oculto');
+    document.getElementById('formOportunidadCRM').reset();
+    document.getElementById('oportunidad-prospecto').disabled = false;
+    document.getElementById('oportunidad-form-estado').textContent = '';
+}
+
+function payloadOportunidadCRM(oportunidad, etapaNueva = null) {
+    const sesion = obtenerSesion();
+    return {
+        id_empresa: Number(sesion.id_empresa),
+        id_usuario: Number(sesion.id_usuario),
+        titulo: oportunidad.titulo,
+        etapa: etapaNueva || oportunidad.etapa,
+        valor_estimado: Number(oportunidad.valor_estimado || 0),
+        probabilidad: etapaNueva
+            ? probabilidadEtapaCRM[etapaNueva]
+            : Number(oportunidad.probabilidad || 0),
+        notas: oportunidad.notas || null
+    };
+}
+
+async function guardarOportunidadCRM(evento) {
+    evento.preventDefault();
+
+    const sesion = obtenerSesion();
+    const estado = document.getElementById('oportunidad-form-estado');
+    const boton = document.getElementById('btn-guardar-oportunidad');
+    const selector = document.getElementById('oportunidad-prospecto');
+
+    if (!sesion || !sesion.id_empresa || !sesion.id_usuario) {
+        estado.classList.add('error');
+        estado.textContent = 'La sesion no contiene empresa o usuario valido.';
+        return;
+    }
+
+    const payload = {
+        id_empresa: Number(sesion.id_empresa),
+        id_usuario: Number(sesion.id_usuario),
+        titulo: document.getElementById('oportunidad-titulo').value.trim(),
+        etapa: document.getElementById('oportunidad-etapa').value,
+        valor_estimado: Number(
+            document.getElementById('oportunidad-valor').value
+        ),
+        probabilidad: Number(
+            document.getElementById('oportunidad-probabilidad').value
+        ),
+        notas: document.getElementById(
+            'oportunidad-notas'
+        ).value.trim() || null
+    };
+
+    if (oportunidadCRMEditandoId === null) {
+        payload.id_prospecto = Number(selector.value);
+    }
+
+    if (
+        !payload.titulo
+        || !Number.isFinite(payload.valor_estimado)
+        || payload.valor_estimado < 0
+        || !Number.isInteger(payload.probabilidad)
+        || payload.probabilidad < 0
+        || payload.probabilidad > 100
+        || (
+            oportunidadCRMEditandoId === null
+            && !payload.id_prospecto
+        )
+    ) {
+        estado.classList.add('error');
+        estado.textContent = 'Revisa prospecto, titulo, valor y probabilidad.';
+        return;
+    }
+
+    const editando = oportunidadCRMEditandoId !== null;
+    const url = editando
+        ? `/api/crm/oportunidades/${oportunidadCRMEditandoId}`
+        : '/api/crm/oportunidades';
+
+    boton.disabled = true;
+    boton.textContent = editando ? 'Actualizando...' : 'Guardando...';
+    estado.classList.remove('error');
+    estado.textContent = 'Guardando oportunidad...';
+
+    try {
+        const respuesta = await fetch(url, {
+            method: editando ? 'PUT' : 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const resultado = await respuesta.json();
+
+        if (!respuesta.ok || !resultado.exito) {
+            throw new Error(
+                mensajeErrorAPI(
+                    resultado,
+                    'No se pudo guardar la oportunidad.'
+                )
+            );
+        }
+
+        ocultarFormularioOportunidadCRM();
+        await obtenerEmbudoCRM();
+        alert(resultado.mensaje || 'Oportunidad guardada exitosamente.');
+    } catch (error) {
+        console.error('Error al guardar oportunidad CRM:', error);
+        estado.classList.add('error');
+        estado.textContent = error.message
+            || 'No se pudo guardar la oportunidad.';
+    } finally {
+        boton.disabled = false;
+        boton.textContent = editando
+            ? 'Guardar cambios'
+            : 'Guardar oportunidad';
+    }
+}
+
+async function cambiarEtapaOportunidadCRM(
+    idOportunidad,
+    selector
+) {
+    const sesion = obtenerSesion();
+    const oportunidad = oportunidadCRMPorId(idOportunidad);
+    const etapaAnterior = oportunidad?.etapa;
+    const etapaNueva = selector.value;
+
+    if (
+        !sesion
+        || !sesion.id_empresa
+        || !sesion.id_usuario
+        || !oportunidad
+        || etapaNueva === etapaAnterior
+    ) {
+        return;
+    }
+
+    selector.disabled = true;
+
+    try {
+        const respuesta = await fetch(
+            `/api/crm/oportunidades/${idOportunidad}`,
+            {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(
+                    payloadOportunidadCRM(oportunidad, etapaNueva)
+                )
+            }
+        );
+        const resultado = await respuesta.json();
+
+        if (!respuesta.ok || !resultado.exito) {
+            throw new Error(
+                mensajeErrorAPI(
+                    resultado,
+                    'No se pudo cambiar la etapa.'
+                )
+            );
+        }
+
+        await obtenerEmbudoCRM();
+    } catch (error) {
+        console.error('Error al cambiar etapa CRM:', error);
+        selector.value = etapaAnterior;
+        selector.disabled = false;
+        alert(error.message || 'No se pudo cambiar la etapa.');
+    }
+}
+
+function fechaLocalISOCRM(fecha) {
+    const anio = fecha.getFullYear();
+    const mes = String(fecha.getMonth() + 1).padStart(2, '0');
+    const dia = String(fecha.getDate()).padStart(2, '0');
+    return `${anio}-${mes}-${dia}`;
+}
+
+function limpiarFormularioCotizacionCRM() {
+    const formulario = document.getElementById('formCotizacionCRM');
+    const estado = document.getElementById('cotizacion-form-estado');
+    const vigencia = new Date();
+    vigencia.setDate(vigencia.getDate() + 15);
+
+    formulario.reset();
+    estado.classList.remove('error');
+    estado.textContent = '';
+    document.getElementById('cotizacion-estado').value = 'Borrador';
+    document.getElementById('cotizacion-vigencia').value = (
+        fechaLocalISOCRM(vigencia)
+    );
+    document.getElementById('cotizacion-vigencia').min = (
+        fechaLocalISOCRM(new Date())
+    );
+    document.getElementById('cotizacion-descuento').value = '0';
+    document.getElementById('cotizacion-impuesto').value = '16';
+    document.getElementById('cotizacion-partidas-body').innerHTML = '';
+    agregarPartidaCotizacionCRM();
+    calcularTotalesCotizacionCRM();
+}
+
+function agregarPartidaCotizacionCRM(datos = {}) {
+    const cuerpo = document.getElementById('cotizacion-partidas-body');
+    const idFila = ++secuenciaPartidaCotizacionCRM;
+    const concepto = datos.concepto || '';
+    const cantidad = Number(datos.cantidad ?? 1);
+    const precio = Number(datos.precio_unitario ?? 0);
+
+    cuerpo.insertAdjacentHTML('beforeend', `
+        <tr data-partida-id="${idFila}">
+            <td>
+                <input
+                    type="text"
+                    class="crm-item-concept partida-concepto"
+                    minlength="2"
+                    maxlength="300"
+                    value="${escaparHTML(concepto)}"
+                    placeholder="Producto o servicio"
+                    required
+                >
+            </td>
+            <td>
+                <input
+                    type="number"
+                    class="partida-cantidad"
+                    min="0.01"
+                    step="0.01"
+                    value="${cantidad}"
+                    oninput="calcularTotalesCotizacionCRM()"
+                    required
+                >
+            </td>
+            <td>
+                <input
+                    type="number"
+                    class="partida-precio"
+                    min="0"
+                    step="0.01"
+                    value="${precio}"
+                    oninput="calcularTotalesCotizacionCRM()"
+                    required
+                >
+            </td>
+            <td>
+                <strong class="partida-subtotal">$0.00</strong>
+            </td>
+            <td>
+                <button
+                    type="button"
+                    class="btn-table btn-table-state"
+                    onclick="eliminarPartidaCotizacionCRM(this)"
+                >
+                    Quitar
+                </button>
+            </td>
+        </tr>
+    `);
+
+    calcularTotalesCotizacionCRM();
+}
+
+function eliminarPartidaCotizacionCRM(boton) {
+    const fila = boton.closest('tr');
+    if (fila) fila.remove();
+
+    if (!document.querySelector('#cotizacion-partidas-body tr')) {
+        agregarPartidaCotizacionCRM();
+        return;
+    }
+
+    calcularTotalesCotizacionCRM();
+}
+
+function partidasFormularioCotizacionCRM() {
+    return Array.from(
+        document.querySelectorAll('#cotizacion-partidas-body tr')
+    ).map(fila => ({
+        concepto: fila.querySelector('.partida-concepto').value.trim(),
+        cantidad: Number(
+            fila.querySelector('.partida-cantidad').value
+        ),
+        precio_unitario: Number(
+            fila.querySelector('.partida-precio').value
+        )
+    }));
+}
+
+function calcularTotalesCotizacionCRM() {
+    const filas = Array.from(
+        document.querySelectorAll('#cotizacion-partidas-body tr')
+    );
+
+    let subtotal = 0;
+
+    filas.forEach(fila => {
+        const cantidad = Number(
+            fila.querySelector('.partida-cantidad').value
+        ) || 0;
+        const precio = Number(
+            fila.querySelector('.partida-precio').value
+        ) || 0;
+        const subtotalPartida = cantidad * precio;
+        subtotal += subtotalPartida;
+        fila.querySelector('.partida-subtotal').textContent = (
+            formatearMoneda(subtotalPartida)
+        );
+    });
+
+    const porcentajeDescuento = Number(
+        document.getElementById('cotizacion-descuento').value
+    ) || 0;
+    const porcentajeImpuesto = Number(
+        document.getElementById('cotizacion-impuesto').value
+    ) || 0;
+    const descuento = subtotal * porcentajeDescuento / 100;
+    const baseImpuesto = Math.max(subtotal - descuento, 0);
+    const impuesto = baseImpuesto * porcentajeImpuesto / 100;
+    const total = baseImpuesto + impuesto;
+
+    document.getElementById(
+        'cotizacion-total-subtotal'
+    ).textContent = formatearMoneda(subtotal);
+    document.getElementById(
+        'cotizacion-total-descuento'
+    ).textContent = formatearMoneda(descuento);
+    document.getElementById(
+        'cotizacion-total-impuesto'
+    ).textContent = formatearMoneda(impuesto);
+    document.getElementById(
+        'cotizacion-total-final'
+    ).textContent = formatearMoneda(total);
+
+    return { subtotal, descuento, impuesto, total };
+}
+
+function renderizarHistorialCotizacionesCRM() {
+    const cuerpo = document.getElementById(
+        'cotizaciones-historial-body'
+    );
+    const resumen = document.getElementById(
+        'cotizaciones-historial-resumen'
+    );
+    const oportunidad = oportunidadCRMPorId(
+        oportunidadCotizacionCRMId
+    );
+    const cotizaciones = oportunidad?.cotizaciones || [];
+
+    resumen.textContent = (
+        `${cotizaciones.length} version(es) registrada(s)`
+    );
+
+    if (!cotizaciones.length) {
+        cuerpo.innerHTML = `
+            <tr>
+                <td colspan="6" style="text-align:center;">
+                    Todavia no hay cotizaciones para esta oportunidad.
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
+    cuerpo.innerHTML = cotizaciones.map(cotizacion => `
+        <tr>
+            <td><strong>${escaparHTML(cotizacion.folio)}</strong></td>
+            <td>V${Number(cotizacion.version)}</td>
+            <td>
+                <span class="${
+                    cotizacion.estado === 'Enviada'
+                        ? 'badge-success'
+                        : cotizacion.estado === 'Sustituida'
+                            ? 'badge-neutral'
+                            : 'badge-warning'
+                }">
+                    ${escaparHTML(cotizacion.estado)}
+                </span>
+            </td>
+            <td>${formatearFechaCXC(cotizacion.vigencia_hasta)}</td>
+            <td><strong>${formatearMoneda(cotizacion.total)}</strong></td>
+            <td>
+                <button
+                    type="button"
+                    class="btn-table btn-table-view"
+                    onclick="verCotizacionCRM(
+                        ${Number(cotizacion.id_cotizacion)}
+                    )"
+                >
+                    Ver
+                </button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+function mostrarFormularioCotizacionCRM(idOportunidad) {
+    const oportunidad = oportunidadCRMPorId(idOportunidad);
+    if (!oportunidad) {
+        alert('No se encontro la oportunidad. Actualiza el embudo.');
+        return;
+    }
+
+    oportunidadCotizacionCRMId = Number(idOportunidad);
+
+    document.getElementById('form-cotizacion-titulo').textContent = (
+        `Cotizar: ${oportunidad.titulo}`
+    );
+    document.getElementById('form-cotizacion-resumen').textContent = (
+        `${oportunidad.prospecto?.nombre || 'Prospecto'} - `
+        + `${oportunidad.cotizaciones?.length || 0} version(es)`
+    );
+
+    ocultarFormularioOportunidadCRM();
+    cerrarVistaCotizacionCRM();
+    cerrarFormularioCierreNegociacionCRM();
+    limpiarFormularioCotizacionCRM();
+    renderizarHistorialCotizacionesCRM();
+
+    const contenedor = document.getElementById(
+        'form-cotizacion-container'
+    );
+    contenedor.classList.remove('oculto');
+    contenedor.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function cerrarFormularioCotizacionCRM() {
+    oportunidadCotizacionCRMId = null;
+    document.getElementById(
+        'form-cotizacion-container'
+    ).classList.add('oculto');
+    document.getElementById('formCotizacionCRM').reset();
+    document.getElementById('cotizacion-form-estado').textContent = '';
+    document.getElementById('cotizaciones-historial-body').innerHTML = '';
+}
+
+async function guardarCotizacionCRM(evento) {
+    evento.preventDefault();
+
+    const sesion = obtenerSesion();
+    const estado = document.getElementById('cotizacion-form-estado');
+    const boton = document.getElementById('btn-guardar-cotizacion');
+    const partidas = partidasFormularioCotizacionCRM();
+
+    if (
+        !sesion
+        || !sesion.id_empresa
+        || !sesion.id_usuario
+        || !oportunidadCotizacionCRMId
+    ) {
+        estado.classList.add('error');
+        estado.textContent = 'La sesion o la oportunidad no son validas.';
+        return;
+    }
+
+    const partidasInvalidas = partidas.some(item => (
+        item.concepto.length < 2
+        || !Number.isFinite(item.cantidad)
+        || item.cantidad <= 0
+        || !Number.isFinite(item.precio_unitario)
+        || item.precio_unitario < 0
+    ));
+
+    const descuento = Number(
+        document.getElementById('cotizacion-descuento').value
+    );
+    const impuesto = Number(
+        document.getElementById('cotizacion-impuesto').value
+    );
+    const vigencia = document.getElementById(
+        'cotizacion-vigencia'
+    ).value;
+
+    if (
+        !partidas.length
+        || partidasInvalidas
+        || !vigencia
+        || !Number.isFinite(descuento)
+        || descuento < 0
+        || descuento > 100
+        || !Number.isFinite(impuesto)
+        || impuesto < 0
+        || impuesto > 100
+    ) {
+        estado.classList.add('error');
+        estado.textContent = (
+            'Revisa partidas, cantidades, precios, vigencia y porcentajes.'
+        );
+        return;
+    }
+
+    const payload = {
+        id_empresa: Number(sesion.id_empresa),
+        id_usuario: Number(sesion.id_usuario),
+        estado: document.getElementById('cotizacion-estado').value,
+        vigencia_hasta: vigencia,
+        descuento_porcentaje: descuento,
+        impuesto_porcentaje: impuesto,
+        notas: document.getElementById(
+            'cotizacion-notas'
+        ).value.trim() || null,
+        partidas
+    };
+
+    const idOportunidad = oportunidadCotizacionCRMId;
+    boton.disabled = true;
+    boton.textContent = 'Guardando...';
+    estado.classList.remove('error');
+    estado.textContent = 'Guardando nueva version...';
+
+    try {
+        const respuesta = await fetch(
+            `/api/crm/oportunidades/${idOportunidad}/cotizaciones`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            }
+        );
+        const resultado = await respuesta.json();
+
+        if (!respuesta.ok || !resultado.exito) {
+            throw new Error(
+                mensajeErrorAPI(
+                    resultado,
+                    'No se pudo guardar la cotizacion.'
+                )
+            );
+        }
+
+        await obtenerEmbudoCRM();
+        mostrarFormularioCotizacionCRM(idOportunidad);
+        document.getElementById('cotizacion-form-estado').textContent = (
+            resultado.mensaje || 'Cotizacion guardada exitosamente.'
+        );
+    } catch (error) {
+        console.error('Error al guardar cotizacion CRM:', error);
+        estado.classList.add('error');
+        estado.textContent = error.message
+            || 'No se pudo guardar la cotizacion.';
+    } finally {
+        boton.disabled = false;
+        boton.textContent = 'Guardar nueva version';
+    }
+}
+
+function contenidoDocumentoCotizacionCRM(cotizacion, oportunidad) {
+    const sesion = obtenerSesion() || {};
+    const prospecto = oportunidad.prospecto || {};
+    const nombreEmpresa = (
+        document.getElementById('empresa-nombre')?.textContent
+        || sesion.nombre_empresa
+        || 'Empresa sin nombre'
+    );
+
+    const filas = (cotizacion.partidas || []).map(item => `
+        <tr>
+            <td>${escaparHTML(item.concepto)}</td>
+            <td>${Number(item.cantidad).toLocaleString('es-MX')}</td>
+            <td>${formatearMoneda(item.precio_unitario)}</td>
+            <td>${formatearMoneda(item.subtotal)}</td>
+        </tr>
+    `).join('');
+
+    return `
+        <article class="crm-quote-document">
+            <div class="crm-quote-document-header">
+                <div>
+                    <p class="eyebrow">Cotizacion comercial</p>
+                    <h2>${escaparHTML(nombreEmpresa)}</h2>
+                    <p>${escaparHTML(oportunidad.titulo)}</p>
+                </div>
+                <div>
+                    <strong>${escaparHTML(cotizacion.folio)}</strong>
+                    <p>Version ${Number(cotizacion.version)}</p>
+                    <p>Vigencia: ${formatearFechaCXC(cotizacion.vigencia_hasta)}</p>
+                </div>
+            </div>
+
+            <div class="crm-quote-client">
+                <div>
+                    <span>Prospecto</span>
+                    <strong>${escaparHTML(prospecto.nombre || 'Sin nombre')}</strong>
+                </div>
+                <div>
+                    <span>Contacto</span>
+                    <strong>${escaparHTML(
+                        prospecto.contacto_principal
+                        || prospecto.telefono
+                        || prospecto.email
+                        || 'Sin contacto'
+                    )}</strong>
+                </div>
+            </div>
+
+            <table class="tabla-custom">
+                <thead>
+                    <tr>
+                        <th>Concepto</th>
+                        <th>Cantidad</th>
+                        <th>Precio unitario</th>
+                        <th>Subtotal</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${filas || '<tr><td colspan="4">Sin partidas</td></tr>'}
+                </tbody>
+            </table>
+
+            <div class="crm-quote-totals">
+                <div>
+                    <span>Subtotal</span>
+                    <strong>${formatearMoneda(cotizacion.subtotal)}</strong>
+                </div>
+                <div>
+                    <span>Descuento (${Number(cotizacion.descuento_porcentaje)}%)</span>
+                    <strong>${formatearMoneda(cotizacion.descuento)}</strong>
+                </div>
+                <div>
+                    <span>Impuesto (${Number(cotizacion.impuesto_porcentaje)}%)</span>
+                    <strong>${formatearMoneda(cotizacion.impuesto)}</strong>
+                </div>
+                <div class="crm-quote-total-main">
+                    <span>Total</span>
+                    <strong>${formatearMoneda(cotizacion.total)}</strong>
+                </div>
+            </div>
+
+            <div class="crm-quote-document-footer">
+                <strong>Notas</strong>
+                <p>${escaparHTML(cotizacion.notas || 'Sin notas adicionales.')}</p>
+            </div>
+        </article>
+    `;
+}
+
+function verCotizacionCRM(idCotizacion) {
+    const seleccion = cotizacionCRMConOportunidad(idCotizacion);
+    if (!seleccion) {
+        alert('No se encontro la cotizacion. Actualiza el embudo.');
+        return;
+    }
+
+    cotizacionCRMSeleccionadaId = Number(idCotizacion);
+    document.getElementById('cotizacion-vista-titulo').textContent = (
+        seleccion.cotizacion.folio
+    );
+    document.getElementById('cotizacion-vista-contenido').innerHTML = (
+        contenidoDocumentoCotizacionCRM(
+            seleccion.cotizacion,
+            seleccion.oportunidad
+        )
+    );
+
+    const contenedor = document.getElementById(
+        'cotizacion-vista-previa'
+    );
+    contenedor.classList.remove('oculto');
+    contenedor.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function cerrarVistaCotizacionCRM() {
+    cotizacionCRMSeleccionadaId = null;
+    document.getElementById(
+        'cotizacion-vista-previa'
+    ).classList.add('oculto');
+    document.getElementById('cotizacion-vista-contenido').innerHTML = '';
+}
+
+function imprimirCotizacionCRM() {
+    const seleccion = cotizacionCRMConOportunidad(
+        cotizacionCRMSeleccionadaId
+    );
+
+    if (!seleccion) {
+        alert('Selecciona una cotizacion antes de imprimir.');
+        return;
+    }
+
+    const ventana = window.open(
+        '',
+        '_blank',
+        'width=1000,height=760'
+    );
+
+    if (!ventana) {
+        alert('Permite ventanas emergentes para imprimir la cotizacion.');
+        return;
+    }
+
+    const contenido = contenidoDocumentoCotizacionCRM(
+        seleccion.cotizacion,
+        seleccion.oportunidad
+    );
+
+    ventana.document.write(`
+        <!DOCTYPE html>
+        <html lang="es">
+        <head>
+            <meta charset="UTF-8">
+            <title>${escaparHTML(seleccion.cotizacion.folio)}</title>
+            <style>
+                @page { size: A4; margin: 14mm; }
+                * { box-sizing: border-box; }
+                body { margin: 0; color: #0f172a; font-family: Arial, sans-serif; }
+                .crm-quote-document { max-width: 820px; margin: auto; }
+                .crm-quote-document-header { display: flex; justify-content: space-between; gap: 24px; padding-bottom: 16px; border-bottom: 2px solid #0f172a; }
+                .crm-quote-document-header h2, .crm-quote-document-header p { margin: 4px 0; }
+                .crm-quote-document-header > div:last-child { text-align: right; }
+                .eyebrow { color: #059669; font-size: 12px; font-weight: 700; text-transform: uppercase; }
+                .crm-quote-client { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin: 18px 0; }
+                .crm-quote-client > div { padding: 12px; border: 1px solid #e2e8f0; border-radius: 8px; }
+                span { display: block; margin-bottom: 4px; color: #64748b; font-size: 12px; }
+                table { width: 100%; border-collapse: collapse; }
+                th, td { padding: 10px; border: 1px solid #d1d5db; text-align: left; font-size: 13px; }
+                th { background: #f1f5f9; }
+                .crm-quote-totals { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 18px; }
+                .crm-quote-totals > div { padding: 10px; border: 1px solid #e2e8f0; border-radius: 8px; }
+                .crm-quote-total-main { background: #ecfdf5; }
+                .crm-quote-document-footer { margin-top: 18px; padding: 12px; background: #f8fafc; font-size: 12px; }
+            </style>
+        </head>
+        <body>${contenido}</body>
+        </html>
+    `);
+
+    ventana.document.close();
+
+    setTimeout(() => {
+        ventana.focus();
+        ventana.print();
+    }, 300);
+}
+
+// ==========================================
+// CRM: CIERRE DE NEGOCIACIONES
+// ==========================================
+let oportunidadCierreCRMId = null;
+let clientesCierreCRM = [];
+
+function fechaISOCRM(fecha = new Date()) {
+    const anio = fecha.getFullYear();
+    const mes = String(fecha.getMonth() + 1).padStart(2, '0');
+    const dia = String(fecha.getDate()).padStart(2, '0');
+    return `${anio}-${mes}-${dia}`;
+}
+
+function cotizacionesOportunidadCierreCRM() {
+    const oportunidad = oportunidadCRMPorId(oportunidadCierreCRMId);
+    return oportunidad?.cotizaciones || [];
+}
+
+function llenarSelectorCotizacionesCierreCRM() {
+    const selector = document.getElementById('cierre-cotizacion');
+    const oportunidad = oportunidadCRMPorId(oportunidadCierreCRMId);
+    const cotizaciones = cotizacionesOportunidadCierreCRM();
+    const idActual = Number(
+        oportunidad?.cotizacion_actual?.id_cotizacion || 0
+    );
+
+    selector.innerHTML = cotizaciones.length
+        ? `
+            <option value="">Selecciona una cotizacion</option>
+            ${cotizaciones.map(cotizacion => `
+                <option
+                    value="${Number(cotizacion.id_cotizacion)}"
+                    ${
+                        Number(cotizacion.id_cotizacion) === idActual
+                            ? 'selected'
+                            : ''
+                    }
+                >
+                    ${escaparHTML(cotizacion.folio)} - V${Number(cotizacion.version)} - ${formatearMoneda(cotizacion.total)}
+                </option>
+            `).join('')}
+        `
+        : '<option value="">Sin cotizaciones registradas</option>';
+}
+
+function llenarSelectorClientesCierreCRM() {
+    const selector = document.getElementById('cierre-cliente');
+    const clientesActivos = clientesCierreCRM.filter(
+        cliente => cliente.activo !== false
+    );
+
+    selector.innerHTML = `
+        <option value="">Crear o vincular automaticamente desde el prospecto</option>
+        ${clientesActivos.map(cliente => `
+            <option value="${Number(cliente.id_cliente)}">
+                ${escaparHTML(cliente.nombre || `Cliente #${cliente.id_cliente}`)}
+            </option>
+        `).join('')}
+    `;
+}
+
+async function cargarClientesCierreCRM() {
+    const sesion = obtenerSesion();
+    if (!sesion?.id_empresa) return;
+
+    try {
+        const respuesta = await fetch(
+            `/api/clientes/${sesion.id_empresa}`,
+            { cache: 'no-store' }
+        );
+        const resultado = await respuesta.json();
+
+        if (
+            !respuesta.ok
+            || resultado.status !== 'success'
+            || !Array.isArray(resultado.data)
+        ) {
+            throw new Error('No se pudo cargar el directorio de clientes.');
+        }
+
+        clientesCierreCRM = resultado.data;
+        llenarSelectorClientesCierreCRM();
+    } catch (error) {
+        console.error('Error al cargar clientes para el cierre:', error);
+        clientesCierreCRM = [];
+        llenarSelectorClientesCierreCRM();
+        document.getElementById('cierre-form-estado').textContent = (
+            'No se pudo cargar el directorio. Puedes dejar el cliente en automatico.'
+        );
+    }
+}
+
+function sincronizarMontoCierreCRM() {
+    const idCotizacion = Number(
+        document.getElementById('cierre-cotizacion').value || 0
+    );
+    const cotizacion = cotizacionesOportunidadCierreCRM().find(
+        item => Number(item.id_cotizacion) === idCotizacion
+    );
+
+    if (cotizacion) {
+        document.getElementById('cierre-monto').value = Number(
+            cotizacion.total || 0
+        ).toFixed(2);
+    }
+}
+
+function actualizarCamposCierreNegociacionCRM() {
+    const compro = document.getElementById('cierre-resultado').value === (
+        'Compro'
+    );
+    const cotizacion = document.getElementById('cierre-cotizacion');
+    const monto = document.getElementById('cierre-monto');
+    const motivo = document.getElementById('cierre-motivo');
+
+    document.getElementById('cierre-monto-grupo').classList.toggle(
+        'oculto',
+        !compro
+    );
+    document.getElementById('cierre-cliente-grupo').classList.toggle(
+        'oculto',
+        !compro
+    );
+    document.getElementById('cierre-motivo-grupo').classList.toggle(
+        'oculto',
+        compro
+    );
+
+    cotizacion.required = compro;
+    monto.required = compro;
+    motivo.required = !compro;
+
+    if (compro) {
+        motivo.value = '';
+        sincronizarMontoCierreCRM();
+    } else {
+        document.getElementById('cierre-cliente').value = '';
+        monto.value = '0';
+    }
+}
+
+async function mostrarFormularioCierreNegociacionCRM(idOportunidad) {
+    const oportunidad = oportunidadCRMPorId(idOportunidad);
+    if (!oportunidad) {
+        alert('No se encontro la oportunidad. Actualiza el embudo.');
+        return;
+    }
+
+    oportunidadCierreCRMId = Number(idOportunidad);
+    const formulario = document.getElementById(
+        'formCierreNegociacionCRM'
+    );
+    const hoy = fechaISOCRM();
+
+    formulario.reset();
+    document.getElementById('cierre-fecha').value = hoy;
+    document.getElementById('cierre-fecha').max = hoy;
+    document.getElementById('cierre-resultado').value = 'Compro';
+    document.getElementById('cierre-form-estado').classList.remove('error');
+    document.getElementById('cierre-form-estado').textContent = '';
+    document.getElementById(
+        'form-cierre-oportunidad-titulo'
+    ).textContent = `Cerrar: ${oportunidad.titulo}`;
+    document.getElementById(
+        'form-cierre-oportunidad-resumen'
+    ).textContent = (
+        `${oportunidad.prospecto?.nombre || 'Prospecto'} - `
+        + `${oportunidad.cotizaciones?.length || 0} cotizacion(es)`
+    );
+
+    llenarSelectorCotizacionesCierreCRM();
+    llenarSelectorClientesCierreCRM();
+    actualizarCamposCierreNegociacionCRM();
+
+    ocultarFormularioOportunidadCRM();
+    cerrarFormularioCotizacionCRM();
+    cerrarVistaCotizacionCRM();
+
+    const contenedor = document.getElementById(
+        'form-cierre-oportunidad-container'
+    );
+    contenedor.classList.remove('oculto');
+    contenedor.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    await cargarClientesCierreCRM();
+}
+
+function cerrarFormularioCierreNegociacionCRM() {
+    oportunidadCierreCRMId = null;
+    const contenedor = document.getElementById(
+        'form-cierre-oportunidad-container'
+    );
+    if (!contenedor) return;
+
+    contenedor.classList.add('oculto');
+    document.getElementById('formCierreNegociacionCRM').reset();
+    document.getElementById('cierre-form-estado').textContent = '';
+}
+
+async function guardarCierreNegociacionCRM(evento) {
+    evento.preventDefault();
+
+    const sesion = obtenerSesion();
+    const estado = document.getElementById('cierre-form-estado');
+    const boton = document.getElementById('btn-guardar-cierre');
+    const resultadoCierre = document.getElementById(
+        'cierre-resultado'
+    ).value;
+    const compro = resultadoCierre === 'Compro';
+    const idCotizacion = Number(
+        document.getElementById('cierre-cotizacion').value || 0
+    );
+    const idCliente = Number(
+        document.getElementById('cierre-cliente').value || 0
+    );
+    const montoFinal = Number(
+        document.getElementById('cierre-monto').value || 0
+    );
+    const motivo = document.getElementById(
+        'cierre-motivo'
+    ).value.trim();
+    const fechaCierre = document.getElementById('cierre-fecha').value;
+
+    if (
+        !sesion?.id_empresa
+        || !sesion?.id_usuario
+        || !oportunidadCierreCRMId
+    ) {
+        estado.classList.add('error');
+        estado.textContent = 'La sesion o la oportunidad no son validas.';
+        return;
+    }
+
+    if (
+        !fechaCierre
+        || fechaCierre > fechaISOCRM()
+        || (compro && (!idCotizacion || montoFinal <= 0))
+        || (!compro && !motivo)
+    ) {
+        estado.classList.add('error');
+        estado.textContent = compro
+            ? 'Selecciona cotizacion, fecha y un monto final mayor a cero.'
+            : 'Selecciona la fecha e indica el motivo de perdida.';
+        return;
+    }
+
+    const oportunidad = oportunidadCRMPorId(oportunidadCierreCRMId);
+    const confirmado = window.confirm(
+        `Vas a cerrar "${oportunidad?.titulo || 'esta oportunidad'}" como "${resultadoCierre}". Esta accion sacara la oportunidad del embudo. Deseas continuar?`
+    );
+    if (!confirmado) return;
+
+    const payload = {
+        id_empresa: Number(sesion.id_empresa),
+        id_usuario: Number(sesion.id_usuario),
+        resultado: resultadoCierre,
+        id_cotizacion: idCotizacion || null,
+        id_cliente: compro && idCliente ? idCliente : null,
+        monto_final: compro ? montoFinal : 0,
+        motivo_perdida: compro ? null : motivo,
+        notas: document.getElementById(
+            'cierre-notas'
+        ).value.trim() || null,
+        fecha_cierre: fechaCierre
+    };
+    const idOportunidad = oportunidadCierreCRMId;
+
+    boton.disabled = true;
+    boton.textContent = 'Cerrando...';
+    estado.classList.remove('error');
+    estado.textContent = 'Registrando resultado final...';
+
+    try {
+        const respuesta = await fetch(
+            `/api/crm/oportunidades/${idOportunidad}/cerrar`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            }
+        );
+        const resultado = await respuesta.json();
+
+        if (!respuesta.ok || !resultado.exito) {
+            throw new Error(
+                mensajeErrorAPI(
+                    resultado,
+                    'No se pudo cerrar la negociacion.'
+                )
+            );
+        }
+
+        cerrarFormularioCierreNegociacionCRM();
+        await obtenerEmbudoCRM();
+        alert(resultado.mensaje || 'Negociacion cerrada exitosamente.');
+    } catch (error) {
+        console.error('Error al cerrar negociacion CRM:', error);
+        estado.classList.add('error');
+        estado.textContent = error.message
+            || 'No se pudo cerrar la negociacion.';
+    } finally {
+        boton.disabled = false;
+        boton.textContent = 'Cerrar negociacion';
+    }
+}
+
+// ==========================================
+// CRM: NEGOCIACIONES CERRADAS
+// ==========================================
+let negociacionesCerradasCRMGlobal = [];
+let negociacionesCerradasCRMFiltradas = [];
+let solicitudNegociacionesCRM = 0;
+
+function claseResultadoNegociacionCRM(resultado) {
+    return resultado === 'Compro'
+        ? 'badge-success'
+        : 'badge-danger';
+}
+
+function textoBusquedaNegociacionCRM(negociacion) {
+    return normalizarBusqueda([
+        negociacion.resultado,
+        negociacion.motivo_perdida,
+        negociacion.notas,
+        negociacion.prospecto?.nombre,
+        negociacion.prospecto?.contacto_principal,
+        negociacion.prospecto?.telefono,
+        negociacion.prospecto?.email,
+        negociacion.oportunidad?.titulo,
+        negociacion.cotizacion?.folio,
+        negociacion.cliente?.nombre
+    ].join(' '));
+}
+
+function actualizarResumenNegociacionesCerradasCRM() {
+    const ganadas = negociacionesCerradasCRMGlobal.filter(
+        item => item.resultado === 'Compro'
+    );
+    const perdidas = negociacionesCerradasCRMGlobal.filter(
+        item => item.resultado === 'No compro'
+    );
+    const total = negociacionesCerradasCRMGlobal.length;
+    const conversion = total ? ganadas.length * 100 / total : 0;
+    const monto = ganadas.reduce(
+        (suma, item) => suma + Number(item.monto_final || 0),
+        0
+    );
+
+    document.getElementById(
+        'negociaciones-resumen-total'
+    ).textContent = total;
+    document.getElementById(
+        'negociaciones-resumen-ganadas'
+    ).textContent = ganadas.length;
+    document.getElementById(
+        'negociaciones-resumen-perdidas'
+    ).textContent = perdidas.length;
+    document.getElementById(
+        'negociaciones-resumen-conversion'
+    ).textContent = `${conversion.toFixed(1)}%`;
+    document.getElementById(
+        'negociaciones-resumen-monto'
+    ).textContent = formatearMoneda(monto);
+}
+
+function renderizarNegociacionesCerradasCRM() {
+    const cuerpo = document.getElementById(
+        'negociaciones-cerradas-body'
+    );
+    const resumen = document.getElementById(
+        'negociaciones-cerradas-resumen'
+    );
+
+    actualizarResumenNegociacionesCerradasCRM();
+    resumen.textContent = (
+        `${negociacionesCerradasCRMFiltradas.length} de `
+        + `${negociacionesCerradasCRMGlobal.length} cierre(s)`
+    );
+
+    if (!negociacionesCerradasCRMFiltradas.length) {
+        cuerpo.innerHTML = `
+            <tr>
+                <td colspan="8" style="text-align:center;">
+                    No hay negociaciones cerradas para estos filtros.
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
+    cuerpo.innerHTML = negociacionesCerradasCRMFiltradas.map(
+        negociacion => `
+            <tr>
+                <td>${formatearFechaCXC(negociacion.fecha_cierre)}</td>
+                <td>
+                    <strong>${escaparHTML(
+                        negociacion.prospecto?.nombre || 'Sin prospecto'
+                    )}</strong>
+                </td>
+                <td>${escaparHTML(
+                    negociacion.oportunidad?.titulo || 'Sin oportunidad'
+                )}</td>
+                <td>${escaparHTML(
+                    negociacion.cotizacion?.folio || 'Sin cotizacion'
+                )}</td>
+                <td>
+                    <span class="${claseResultadoNegociacionCRM(
+                        negociacion.resultado
+                    )}">
+                        ${escaparHTML(negociacion.resultado)}
+                    </span>
+                </td>
+                <td>
+                    <strong>${
+                        negociacion.resultado === 'Compro'
+                            ? formatearMoneda(negociacion.monto_final)
+                            : '-'
+                    }</strong>
+                </td>
+                <td>${escaparHTML(
+                    negociacion.cliente?.nombre || '-'
+                )}</td>
+                <td>
+                    <button
+                        type="button"
+                        class="btn-table btn-table-view"
+                        onclick="verDetalleNegociacionCRM(
+                            ${Number(negociacion.id_negociacion)}
+                        )"
+                    >
+                        Ver
+                    </button>
+                </td>
+            </tr>
+        `
+    ).join('');
+}
+
+function filtrarNegociacionesCerradasCRM() {
+    const busqueda = normalizarBusqueda(
+        document.getElementById('negociaciones-busqueda').value
+    );
+    const resultado = document.getElementById(
+        'negociaciones-filtro-resultado'
+    ).value;
+    const inicio = document.getElementById(
+        'negociaciones-fecha-inicio'
+    ).value;
+    const fin = document.getElementById(
+        'negociaciones-fecha-fin'
+    ).value;
+
+    negociacionesCerradasCRMFiltradas = (
+        negociacionesCerradasCRMGlobal.filter(negociacion => {
+            const fecha = String(negociacion.fecha_cierre || '').slice(0, 10);
+            return (
+                (!busqueda || textoBusquedaNegociacionCRM(
+                    negociacion
+                ).includes(busqueda))
+                && (
+                    resultado === 'todos'
+                    || negociacion.resultado === resultado
+                )
+                && (!inicio || fecha >= inicio)
+                && (!fin || fecha <= fin)
+            );
+        })
+    );
+
+    cerrarDetalleNegociacionCRM();
+    renderizarNegociacionesCerradasCRM();
+}
+
+function restablecerFiltrosNegociacionesCerradasCRM() {
+    document.getElementById('negociaciones-busqueda').value = '';
+    document.getElementById(
+        'negociaciones-filtro-resultado'
+    ).value = 'todos';
+    document.getElementById('negociaciones-fecha-inicio').value = '';
+    document.getElementById('negociaciones-fecha-fin').value = '';
+    filtrarNegociacionesCerradasCRM();
+}
+
+function verDetalleNegociacionCRM(idNegociacion) {
+    const negociacion = negociacionesCerradasCRMGlobal.find(
+        item => Number(item.id_negociacion) === Number(idNegociacion)
+    );
+    if (!negociacion) {
+        alert('No se encontro la negociacion. Actualiza el historial.');
+        return;
+    }
+
+    const prospecto = negociacion.prospecto || {};
+    const oportunidad = negociacion.oportunidad || {};
+    const cotizacion = negociacion.cotizacion || {};
+    const cliente = negociacion.cliente || {};
+
+    document.getElementById('negociacion-detalle-titulo').textContent = (
+        `${oportunidad.titulo || 'Negociacion'} - ${negociacion.resultado}`
+    );
+    document.getElementById('negociacion-detalle-contenido').innerHTML = `
+        <div class="crm-detail-grid">
+            <div><span>Fecha de cierre</span><strong>${formatearFechaCXC(negociacion.fecha_cierre)}</strong></div>
+            <div><span>Resultado</span><strong class="${claseResultadoNegociacionCRM(negociacion.resultado)}">${escaparHTML(negociacion.resultado)}</strong></div>
+            <div><span>Prospecto</span><strong>${escaparHTML(prospecto.nombre || 'Sin prospecto')}</strong></div>
+            <div><span>Oportunidad</span><strong>${escaparHTML(oportunidad.titulo || 'Sin oportunidad')}</strong></div>
+            <div><span>Cotizacion</span><strong>${escaparHTML(cotizacion.folio || 'Sin cotizacion')}</strong></div>
+            <div><span>Monto cotizado</span><strong>${cotizacion.total != null ? formatearMoneda(cotizacion.total) : '-'}</strong></div>
+            <div><span>Monto final</span><strong>${negociacion.resultado === 'Compro' ? formatearMoneda(negociacion.monto_final) : '-'}</strong></div>
+            <div><span>Cliente relacionado</span><strong>${escaparHTML(cliente.nombre || '-')}</strong></div>
+            <div class="crm-detail-wide"><span>Motivo de perdida</span><strong>${escaparHTML(negociacion.motivo_perdida || '-')}</strong></div>
+            <div class="crm-detail-wide"><span>Notas finales</span><strong>${escaparHTML(negociacion.notas || 'Sin notas')}</strong></div>
+        </div>
+    `;
+
+    const contenedor = document.getElementById(
+        'negociacion-detalle-container'
+    );
+    contenedor.classList.remove('oculto');
+    contenedor.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function cerrarDetalleNegociacionCRM() {
+    const contenedor = document.getElementById(
+        'negociacion-detalle-container'
+    );
+    if (!contenedor) return;
+    contenedor.classList.add('oculto');
+    document.getElementById('negociacion-detalle-contenido').innerHTML = '';
+}
+
+async function obtenerNegociacionesCerradasCRM() {
+    const sesion = obtenerSesion();
+    const estado = document.getElementById(
+        'negociaciones-cerradas-estado'
+    );
+    const boton = document.getElementById(
+        'btn-actualizar-negociaciones-crm'
+    );
+    if (!sesion?.id_empresa || !estado) return;
+
+    const numeroSolicitud = ++solicitudNegociacionesCRM;
+    estado.classList.remove('error');
+    estado.textContent = 'Consultando negociaciones cerradas...';
+    if (boton) {
+        boton.disabled = true;
+        boton.textContent = 'Actualizando...';
+    }
+
+    try {
+        const respuesta = await fetch(
+            `/api/crm/negociaciones/${sesion.id_empresa}`,
+            { cache: 'no-store' }
+        );
+        const resultado = await respuesta.json();
+
+        if (
+            !respuesta.ok
+            || !resultado.exito
+            || !Array.isArray(resultado.data)
+        ) {
+            throw new Error(
+                mensajeErrorAPI(
+                    resultado,
+                    'No se pudo cargar el historial de cierres.'
+                )
+            );
+        }
+
+        if (numeroSolicitud !== solicitudNegociacionesCRM) return;
+
+        negociacionesCerradasCRMGlobal = resultado.data;
+        filtrarNegociacionesCerradasCRM();
+        estado.textContent = negociacionesCerradasCRMGlobal.length
+            ? `${negociacionesCerradasCRMGlobal.length} cierre(s) registrado(s).`
+            : 'Todavia no hay negociaciones cerradas.';
+    } catch (error) {
+        if (numeroSolicitud !== solicitudNegociacionesCRM) return;
+
+        console.error('Error al cargar negociaciones cerradas:', error);
+        negociacionesCerradasCRMGlobal = [];
+        negociacionesCerradasCRMFiltradas = [];
+        renderizarNegociacionesCerradasCRM();
+        estado.classList.add('error');
+        estado.textContent = error.message
+            || 'No se pudo cargar el historial de cierres.';
+    } finally {
+        if (numeroSolicitud === solicitudNegociacionesCRM && boton) {
+            boton.disabled = false;
+            boton.textContent = 'Actualizar';
+        }
+    }
+}
+
+// ==========================================
+// CRM: DASHBOARD COMERCIAL
+// ==========================================
+let solicitudDashboardCRM = 0;
+
+function renderizarEtapasDashboardCRM(etapas) {
+    const contenedor = document.getElementById('dashboard-crm-etapas');
+    const registros = Object.entries(etapas || {});
+    const maximo = Math.max(...registros.map(([, valor]) => valor), 1);
+
+    contenedor.innerHTML = registros.length
+        ? registros.map(([etapa, cantidad]) => `
+            <div class="crm-stage-row">
+                <div>
+                    <span>${escaparHTML(etapa)}</span>
+                    <strong>${Number(cantidad)}</strong>
+                </div>
+                <div class="crm-stage-track">
+                    <span style="width:${Math.max(
+                        Number(cantidad) * 100 / maximo,
+                        cantidad ? 6 : 0
+                    )}%"></span>
+                </div>
+            </div>
+        `).join('')
+        : '<p class="crm-empty-stage">Sin oportunidades activas.</p>';
+}
+
+function renderizarMotivosDashboardCRM(motivos) {
+    const contenedor = document.getElementById('dashboard-crm-motivos');
+    contenedor.innerHTML = Array.isArray(motivos) && motivos.length
+        ? motivos.map(item => `
+            <div class="crm-reason-row">
+                <span>${escaparHTML(item.motivo)}</span>
+                <strong>${Number(item.cantidad)}</strong>
+            </div>
+        `).join('')
+        : '<p class="crm-empty-stage">Todavia no hay motivos de perdida.</p>';
+}
+
+function renderizarSeguimientosDashboardCRM(seguimientos) {
+    const cuerpo = document.getElementById(
+        'dashboard-crm-seguimientos-body'
+    );
+    cuerpo.innerHTML = Array.isArray(seguimientos) && seguimientos.length
+        ? seguimientos.map(prospecto => `
+            <tr>
+                <td><strong>${escaparHTML(prospecto.nombre || 'Sin nombre')}</strong></td>
+                <td>${escaparHTML(prospecto.interes_en || 'Sin interes')}</td>
+                <td>${escaparHTML(prospecto.estatus || '-')}</td>
+                <td class="amount-negative">${formatearFechaCXC(prospecto.proximo_seguimiento, true)}</td>
+            </tr>
+        `).join('')
+        : `
+            <tr>
+                <td colspan="4" style="text-align:center;">
+                    No hay seguimientos vencidos.
+                </td>
+            </tr>
+        `;
+}
+
+function renderizarCierresDashboardCRM(cierres) {
+    const cuerpo = document.getElementById('dashboard-crm-cierres-body');
+    cuerpo.innerHTML = Array.isArray(cierres) && cierres.length
+        ? cierres.map(cierre => `
+            <tr>
+                <td>${formatearFechaCXC(cierre.fecha_cierre)}</td>
+                <td>${escaparHTML(cierre.prospecto?.nombre || 'Sin prospecto')}</td>
+                <td>${escaparHTML(cierre.oportunidad?.titulo || 'Sin oportunidad')}</td>
+                <td><span class="${claseResultadoNegociacionCRM(cierre.resultado)}">${escaparHTML(cierre.resultado)}</span></td>
+                <td><strong>${cierre.resultado === 'Compro' ? formatearMoneda(cierre.monto_final) : '-'}</strong></td>
+            </tr>
+        `).join('')
+        : `
+            <tr>
+                <td colspan="5" style="text-align:center;">
+                    Todavia no hay cierres registrados.
+                </td>
+            </tr>
+        `;
+}
+
+function renderizarDashboardComercial(datos) {
+    const resumen = datos?.resumen || {};
+
+    document.getElementById(
+        'dashboard-crm-prospectos'
+    ).textContent = Number(resumen.prospectos_activos || 0);
+    document.getElementById(
+        'dashboard-crm-vencidos'
+    ).textContent = Number(resumen.seguimientos_vencidos || 0);
+    document.getElementById(
+        'dashboard-crm-oportunidades'
+    ).textContent = Number(resumen.oportunidades_activas || 0);
+    document.getElementById(
+        'dashboard-crm-valor'
+    ).textContent = formatearMoneda(resumen.valor_embudo || 0);
+    document.getElementById(
+        'dashboard-crm-ponderado'
+    ).textContent = formatearMoneda(resumen.valor_ponderado || 0);
+    document.getElementById(
+        'dashboard-crm-cotizaciones'
+    ).textContent = Number(resumen.cotizaciones_enviadas || 0);
+    document.getElementById(
+        'dashboard-crm-conversion'
+    ).textContent = `${Number(resumen.tasa_conversion || 0).toFixed(1)}%`;
+    document.getElementById(
+        'dashboard-crm-ganado'
+    ).textContent = formatearMoneda(resumen.monto_ganado || 0);
+
+    renderizarEtapasDashboardCRM(datos?.etapas || {});
+    renderizarMotivosDashboardCRM(datos?.motivos_perdida || []);
+    renderizarSeguimientosDashboardCRM(
+        datos?.seguimientos_vencidos || []
+    );
+    renderizarCierresDashboardCRM(datos?.cierres_recientes || []);
+}
+
+async function obtenerDashboardComercial() {
+    const sesion = obtenerSesion();
+    const estado = document.getElementById('dashboard-crm-estado');
+    const boton = document.getElementById(
+        'btn-actualizar-dashboard-crm'
+    );
+    if (!sesion?.id_empresa || !estado) return;
+
+    const numeroSolicitud = ++solicitudDashboardCRM;
+    estado.classList.remove('error');
+    estado.textContent = 'Calculando indicadores comerciales...';
+    if (boton) {
+        boton.disabled = true;
+        boton.textContent = 'Actualizando...';
+    }
+
+    try {
+        const respuesta = await fetch(
+            `/api/crm/dashboard/${sesion.id_empresa}`,
+            { cache: 'no-store' }
+        );
+        const resultado = await respuesta.json();
+
+        if (!respuesta.ok || !resultado.exito || !resultado.data) {
+            throw new Error(
+                mensajeErrorAPI(
+                    resultado,
+                    'No se pudo cargar el Dashboard comercial.'
+                )
+            );
+        }
+
+        if (numeroSolicitud !== solicitudDashboardCRM) return;
+
+        renderizarDashboardComercial(resultado.data);
+        const resumen = resultado.data.resumen || {};
+        estado.textContent = (
+            `${Number(resumen.cierres_ganados || 0)} cierre(s) ganado(s), `
+            + `${Number(resumen.cierres_perdidos || 0)} perdido(s) y `
+            + `${Number(resumen.seguimientos_hoy || 0)} seguimiento(s) para hoy.`
+        );
+    } catch (error) {
+        if (numeroSolicitud !== solicitudDashboardCRM) return;
+
+        console.error('Error al cargar Dashboard comercial:', error);
+        renderizarDashboardComercial({});
+        estado.classList.add('error');
+        estado.textContent = error.message
+            || 'No se pudo cargar el Dashboard comercial.';
+    } finally {
+        if (numeroSolicitud === solicitudDashboardCRM && boton) {
+            boton.disabled = false;
+            boton.textContent = 'Actualizar';
+        }
+    }
+}
+

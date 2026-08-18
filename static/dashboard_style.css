@@ -19,7 +19,7 @@ body {
 }
 
 .app-header {
-    position: sticky;
+    position: static;
     top: 0;
     z-index: 100;
     width: 100%;
@@ -147,14 +147,11 @@ body {
 
 .navigation-breadcrumb strong { color: white; }
 
-.app-header {
-    position: static;
-    top: 0;
-    z-index: 100;
+.main-content {
     width: 100%;
-    background-color: #111827;
-    color: white;
-    box-shadow: 0 4px 12px rgba(17, 24, 39, 0.18);
+    max-width: 100%;
+    min-width: 0;
+    padding: 2rem;
 }
 
 .btn-logout { background: #ef4444; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: bold; }
@@ -252,6 +249,167 @@ body {
 .finance-summary-card.success { border-left-color: #10b981; }
 .finance-summary-card span { color: #6b7280; font-size: 0.78rem; font-weight: 700; text-transform: uppercase; }
 .finance-summary-card strong { font-size: 1.35rem; overflow-wrap: anywhere; }
+
+/* DASHBOARD FINANCIERO */
+.financial-dashboard-header {
+    align-items: flex-start;
+}
+
+.financial-dashboard-header h2 {
+    margin: 0.2rem 0 0;
+}
+
+.financial-dashboard-period {
+    margin: 0.35rem 0 0;
+    color: #6b7280;
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.financial-dashboard-note {
+    margin: -0.5rem 0 1.5rem;
+    padding: 0.8rem 1rem;
+    color: #4b5563;
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    line-height: 1.5;
+}
+
+.financial-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.25rem;
+}
+
+.financial-kpi-card {
+    display: grid;
+    gap: 0.45rem;
+    min-width: 0;
+    padding: 1.25rem;
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-top: 4px solid #2563eb;
+    border-radius: 10px;
+}
+
+.financial-kpi-card.income { border-top-color: #10b981; }
+.financial-kpi-card.expense { border-top-color: #ef4444; }
+.financial-kpi-card.net.negative { border-top-color: #f59e0b; }
+.financial-kpi-card span { color: #6b7280; font-size: 0.75rem; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; }
+.financial-kpi-card strong { font-size: clamp(1.35rem, 2.3vw, 2rem); overflow-wrap: anywhere; }
+.financial-kpi-card small { color: #6b7280; line-height: 1.35; }
+.financial-kpi-card.income strong { color: #047857; }
+.financial-kpi-card.expense strong { color: #b91c1c; }
+.financial-kpi-card.net strong { color: #1d4ed8; }
+.financial-kpi-card.net.negative strong { color: #b45309; }
+
+.financial-chart-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem 1.25rem;
+    margin-bottom: 1.25rem;
+    color: #4b5563;
+    font-size: 0.82rem;
+    font-weight: 600;
+}
+
+.financial-chart-legend span {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+}
+
+.financial-chart-legend i {
+    width: 0.75rem;
+    height: 0.75rem;
+    border-radius: 3px;
+}
+
+.financial-chart-legend .legend-income { background: #10b981; }
+.financial-chart-legend .legend-expense { background: #ef4444; }
+.financial-chart-legend .legend-net { background: #2563eb; }
+
+.financial-chart-card {
+    min-width: 0;
+    margin-top: 1rem;
+    padding: 1.25rem;
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+}
+
+.financial-chart-heading h3 {
+    margin: 0;
+    font-size: 1.05rem;
+}
+
+.financial-chart-heading p {
+    margin: 0.25rem 0 1rem;
+    color: #6b7280;
+    font-size: 0.82rem;
+}
+
+.financial-chart-scroll {
+    width: 100%;
+    min-height: 318px;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    border-top: 1px solid #f3f4f6;
+}
+
+.financial-chart-svg {
+    display: block;
+    min-width: 100%;
+    height: auto;
+}
+
+.financial-chart-grid-line {
+    stroke: #e5e7eb;
+    stroke-width: 1;
+}
+
+.financial-chart-zero-line {
+    stroke: #9ca3af;
+    stroke-width: 1.25;
+}
+
+.financial-chart-axis-text {
+    fill: #6b7280;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-size: 11px;
+}
+
+.financial-chart-bar {
+    transition: opacity 0.15s;
+}
+
+.financial-chart-bar:hover {
+    opacity: 0.72;
+}
+
+.financial-chart-empty {
+    display: grid;
+    min-height: 300px;
+    margin: 0;
+    place-items: center;
+    color: #6b7280;
+    text-align: center;
+}
+
+.financial-dashboard-status {
+    min-height: 1.25rem;
+    margin: 1rem 0 0;
+    color: #6b7280;
+    font-size: 0.82rem;
+    text-align: right;
+}
+
+.financial-dashboard-status.error {
+    color: #b91c1c;
+}
 
 .cxc-detail-card { border-left: 4px solid #3b82f6; }
 .cxc-detail-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; }
@@ -763,10 +921,6 @@ body {
     flex-wrap: wrap;
 }
 
-@media (max-width: 1180px) {
-    .app-header { position: static; }
-}
-
 @media (max-width: 900px) {
     .topbar { align-items: flex-start; padding: 1rem; }
     .session-controls { align-items: flex-end; flex-direction: column; gap: 0.6rem; }
@@ -778,6 +932,7 @@ body {
     .pos-catalogo { border-right: 0; border-bottom: 1px solid #e5e7eb; padding: 0 0 1.5rem; }
     #modal-pagos-cxp > div { align-items: stretch !important; flex-direction: column; gap: 1rem !important; }
     .finance-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .financial-kpi-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .cxc-summary-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .client-purchase-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .cxc-detail-grid { grid-template-columns: minmax(0, 1fr); }
@@ -790,7 +945,7 @@ body {
         white-space: normal;
     }
 
-    .module-select-wrapper { flex-basis: 100%; max-width: none; }
+    .module-select-wrapper { flex-basis: 100%; max-width: none; margin-left: 0; }
     .navigation-breadcrumb { width: 100%; margin: 0; }
 }
 
@@ -814,6 +969,7 @@ body {
     .client-filters .client-search,
     .client-refresh { flex-basis: 100%; width: 100%; }
     .finance-summary-grid,
+    .financial-kpi-grid,
     .cxc-summary-grid,
     .client-purchase-summary,
     .cxc-account-summary { grid-template-columns: minmax(0, 1fr); }
