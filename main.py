@@ -1,7 +1,7 @@
 import re
 from datetime import date, datetime
 from decimal import Decimal
-
+import ia_motor
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -34,6 +34,67 @@ def procesar_login(datos: LoginData):
 @app.get("/api/empresas/{id_empresa}/nombre")
 def consultar_nombre_empresa(id_empresa: int):
     return database.obtener_nombre_empresa(id_empresa)
+
+# ============================================================
+# NUEVO: ENDPOINT DEL MOTOR LOCAL BIZPILOT IA
+# ============================================================
+
+class PreguntaBizPilotIASchema(BaseModel):
+    """
+    Define los datos que debe enviar el navegador.
+    """
+
+    id_empresa: int = Field(gt=0)
+    id_usuario: int = Field(gt=0)
+    mensaje: str = Field(
+        min_length=1,
+        max_length=500
+    )
+
+    @field_validator(
+        "mensaje",
+        mode="before"
+    )
+    @classmethod
+    def limpiar_mensaje_bizpilot_ia(
+        cls,
+        valor
+    ):
+        """
+        Elimina espacios sobrantes antes de validar.
+        """
+
+        return str(valor or "").strip()
+
+
+@app.post("/api/ia/ayuda")
+def consultar_ayuda_bizpilot_ia(
+    pregunta: PreguntaBizPilotIASchema
+):
+    """
+    Recibe una pregunta y devuelve la respuesta del motor local.
+    """
+
+    usuario_valido = database.usuario_pertenece_empresa(
+        pregunta.id_usuario,
+        pregunta.id_empresa
+    )
+
+    if not usuario_valido:
+        return {
+            "exito": False,
+            "mensaje": "La sesion no es valida"
+        }
+
+    respuesta = ia_motor.responder_pregunta(
+        pregunta.mensaje
+    )
+
+    return {
+        "exito": True,
+        "mensaje": "Respuesta generada",
+        "data": respuesta
+    }
 
 class ProductoSchema(BaseModel):
     id_empresa: int

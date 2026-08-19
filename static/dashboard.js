@@ -45,7 +45,7 @@ const configuracionAreas = {
         ]
     },
     copilot: {
-        nombre: 'Inteligencia artificial',
+        nombre: 'BizPilot IA',
         moduloInicial: 'ia-copilot',
         modulos: ['ia-copilot']
     }
@@ -74,7 +74,7 @@ const configuracionModulos = {
     'rrhh-empleados': { nombre: 'Empleados', area: 'rrhh', vistaId: 'vista-rrhh-empleados', alCargar: obtenerEmpleadosRRHH },
     'rrhh-administrativo': { nombre: 'Administrativo', area: 'rrhh', vistaId: 'vista-rrhh-administrativo', alCargar: iniciarAdministrativoRRHH },
 
-    'ia-copilot': { nombre: 'BizPilot CoPilot', area: 'copilot', vistaId: 'vista-ia-copilot' }
+    'ia-copilot': { nombre: 'BizPilot IA', area: 'copilot', vistaId: 'vista-ia-copilot', alCargar: inicializarBizPilotIA }
 };
 
 let areaActiva = null;
@@ -8463,3 +8463,458 @@ async function guardarMovimientoRRHH(event) {
     }
 }
 
+//INICIO INTERFAZ BIZPILOT IA
+
+let bizPilotIAInicializada = false;
+let bizPilotIAProcesando = false;
+
+
+/**
+ * Devuelve la hora actual para mostrarla junto a cada mensaje.
+ */
+function obtenerHoraBizPilotIA() {
+    return new Intl.DateTimeFormat('es-MX', {
+        hour: '2-digit',
+        minute: '2-digit'
+    }).format(new Date());
+}
+
+
+/**
+ * Coloca la pantalla de bienvenida dentro del historial.
+ * Tambien configura Enter para enviar la pregunta.
+ */
+function inicializarBizPilotIA() {
+    const contenedor = document.getElementById('bizpilot-ia-mensajes');
+    const campoPregunta = document.getElementById('bizpilot-ia-pregunta');
+
+    if (!contenedor || !campoPregunta) {
+        console.error(
+            'No se encontraron los elementos principales de BizPilot IA.'
+        );
+        return;
+    }
+
+    if (!bizPilotIAInicializada) {
+        contenedor.innerHTML = '';
+
+        const bienvenida = document.createElement('div');
+        bienvenida.className = 'bizpilot-ia-welcome';
+
+        const titulo = document.createElement('h3');
+        titulo.textContent = 'Hola, soy BizPilot IA';
+
+        const descripcion = document.createElement('p');
+        descripcion.textContent =
+            'Puedo ayudarte a encontrar funciones y explicar como usar BizPilot.';
+
+        bienvenida.appendChild(titulo);
+        bienvenida.appendChild(descripcion);
+        contenedor.appendChild(bienvenida);
+
+        bizPilotIAInicializada = true;
+    }
+
+    if (campoPregunta.dataset.enterConfigurado !== 'true') {
+        campoPregunta.addEventListener('keydown', manejarEnterBizPilotIA);
+        campoPregunta.dataset.enterConfigurado = 'true';
+    }
+
+    campoPregunta.focus();
+}
+
+
+/**
+ * Permite enviar con Enter.
+ * Shift + Enter conserva el salto de linea.
+ */
+function manejarEnterBizPilotIA(event) {
+    if (
+        event.key === 'Enter'
+        && !event.shiftKey
+        && !event.isComposing
+    ) {
+        event.preventDefault();
+
+        const formulario = document.getElementById('form-bizpilot-ia');
+
+        if (formulario) {
+            formulario.requestSubmit();
+        }
+    }
+}
+
+
+/**
+ * Crea una burbuja dentro del historial.
+ *
+ * tipo puede ser:
+ * usuario
+ * asistente
+ * error
+ */
+function agregarMensajeBizPilotIA(tipo, texto) {
+    const contenedor = document.getElementById('bizpilot-ia-mensajes');
+
+    if (!contenedor) {
+        return;
+    }
+
+    const tiposPermitidos = ['usuario', 'asistente', 'error'];
+
+    const tipoSeguro = tiposPermitidos.includes(tipo)
+        ? tipo
+        : 'asistente';
+
+    const fila = document.createElement('div');
+    fila.className = `bizpilot-ia-message ${tipoSeguro}`;
+
+    const burbuja = document.createElement('div');
+    burbuja.className = 'bizpilot-ia-bubble';
+
+    const informacion = document.createElement('span');
+    informacion.className = 'bizpilot-ia-message-meta';
+
+    informacion.textContent = tipoSeguro === 'usuario'
+        ? `Tu | ${obtenerHoraBizPilotIA()}`
+        : `BizPilot IA | ${obtenerHoraBizPilotIA()}`;
+
+    const contenido = document.createElement('div');
+    contenido.textContent = String(texto || '');
+
+    burbuja.appendChild(informacion);
+    burbuja.appendChild(contenido);
+    fila.appendChild(burbuja);
+    contenedor.appendChild(fila);
+
+    contenedor.scrollTop = contenedor.scrollHeight;
+
+    return burbuja;
+}
+
+
+/**
+ * Muestra u oculta el indicador de procesamiento.
+ * Tambien bloquea el formulario para evitar envios duplicados.
+ */
+function establecerProcesandoBizPilotIA(procesando) {
+    const indicador = document.getElementById('bizpilot-ia-escribiendo');
+    const campoPregunta = document.getElementById('bizpilot-ia-pregunta');
+    const botonEnviar = document.getElementById('bizpilot-ia-enviar');
+
+    bizPilotIAProcesando = Boolean(procesando);
+
+    if (indicador) {
+        indicador.classList.toggle(
+            'oculto',
+            !bizPilotIAProcesando
+        );
+    }
+
+    if (campoPregunta) {
+        campoPregunta.disabled = bizPilotIAProcesando;
+    }
+
+    if (botonEnviar) {
+        botonEnviar.disabled = bizPilotIAProcesando;
+        botonEnviar.textContent = bizPilotIAProcesando
+            ? 'Revisando...'
+            : 'Enviar';
+    }
+}
+
+
+/**
+ * Borra la conversacion visual y vuelve a mostrar la bienvenida.
+ * Todavia no elimina registros porque el chat no se guarda.
+ */
+function limpiarChatBizPilotIA() {
+    if (bizPilotIAProcesando) {
+        return;
+    }
+
+    const contenedor = document.getElementById('bizpilot-ia-mensajes');
+    const campoPregunta = document.getElementById('bizpilot-ia-pregunta');
+
+    if (contenedor) {
+        contenedor.innerHTML = '';
+    }
+
+    if (campoPregunta) {
+        campoPregunta.value = '';
+    }
+
+    bizPilotIAInicializada = false;
+    inicializarBizPilotIA();
+}
+
+
+/**
+ * Coloca una pregunta rapida en el formulario y la envia.
+ */
+function preguntarBizPilotIA(pregunta) {
+    const campoPregunta = document.getElementById('bizpilot-ia-pregunta');
+    const formulario = document.getElementById('form-bizpilot-ia');
+
+    if (
+        !campoPregunta
+        || !formulario
+        || bizPilotIAProcesando
+    ) {
+        return;
+    }
+
+    campoPregunta.value = String(pregunta || '').trim();
+
+    if (!campoPregunta.value) {
+        return;
+    }
+
+    formulario.requestSubmit();
+}
+
+
+/**
+ * Recibe el envio principal del formulario.
+ *
+ * En este paso solo probamos la interfaz.
+ * La llamada al motor Python se agregara despues.
+ */
+
+/**
+ * Envia la pregunta al motor local de Python.
+ */
+async function solicitarRespuestaBizPilotIA(pregunta) {
+    const sesion = obtenerSesion();
+
+    if (
+        !sesion
+        || !sesion.id_empresa
+        || !sesion.id_usuario
+    ) {
+        throw new Error(
+            'La sesion no es valida. Inicia sesion nuevamente.'
+        );
+    }
+
+    const respuesta = await fetch('/api/ia/ayuda', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            id_empresa: Number(sesion.id_empresa),
+            id_usuario: Number(sesion.id_usuario),
+            mensaje: pregunta
+        })
+    });
+
+    let resultado;
+
+    try {
+        resultado = await respuesta.json();
+    } catch (error) {
+        throw new Error(
+            'El servidor devolvio una respuesta invalida.'
+        );
+    }
+
+    if (!respuesta.ok || !resultado.exito) {
+        throw new Error(
+            resultado.mensaje
+            || 'No se pudo consultar BizPilot IA.'
+        );
+    }
+
+    if (!resultado.data) {
+        throw new Error(
+            'BizPilot IA no devolvio informacion.'
+        );
+    }
+
+    return resultado.data;
+}
+
+
+/**
+ * Muestra una respuesta estructurada del motor local.
+ */
+function renderizarRespuestaBizPilotIA(datos) {
+    const burbuja = agregarMensajeBizPilotIA(
+        'asistente',
+        datos.respuesta || 'No encontre una respuesta.'
+    );
+
+    if (!burbuja) {
+        return;
+    }
+
+    const pasos = Array.isArray(datos.pasos)
+        ? datos.pasos
+        : [];
+
+    if (pasos.length) {
+        const tituloPasos = document.createElement('strong');
+        tituloPasos.className = 'bizpilot-ia-section-title';
+        tituloPasos.textContent = 'Pasos';
+
+        const listaPasos = document.createElement('ol');
+        listaPasos.className = 'bizpilot-ia-steps';
+
+        pasos.forEach(paso => {
+            const elemento = document.createElement('li');
+            elemento.textContent = String(paso);
+            listaPasos.appendChild(elemento);
+        });
+
+        burbuja.appendChild(tituloPasos);
+        burbuja.appendChild(listaPasos);
+    }
+
+    const acciones = Array.isArray(datos.acciones)
+        ? datos.acciones
+        : [];
+
+    if (acciones.length) {
+        const contenedorAcciones = document.createElement('div');
+        contenedorAcciones.className = 'bizpilot-ia-actions';
+
+        acciones.forEach(accion => {
+            if (!accion.area || !accion.modulo) {
+                return;
+            }
+
+            const boton = document.createElement('button');
+            boton.type = 'button';
+            boton.className = 'bizpilot-ia-action';
+            boton.textContent = accion.texto || 'Abrir modulo';
+
+            boton.addEventListener('click', () => {
+                abrirModuloDesdeBizPilotIA(
+                    accion.area,
+                    accion.modulo
+                );
+            });
+
+            contenedorAcciones.appendChild(boton);
+        });
+
+        burbuja.appendChild(contenedorAcciones);
+    }
+
+    const sugerencias = Array.isArray(datos.sugerencias)
+        ? datos.sugerencias.slice(0, 3)
+        : [];
+
+    if (sugerencias.length) {
+        const contenedorSugerencias = document.createElement('div');
+        contenedorSugerencias.className = 'bizpilot-ia-followups';
+
+        const tituloSugerencias = document.createElement('span');
+        tituloSugerencias.textContent = 'Tambien puedes preguntar:';
+
+        contenedorSugerencias.appendChild(
+            tituloSugerencias
+        );
+
+        sugerencias.forEach(sugerencia => {
+            const boton = document.createElement('button');
+            boton.type = 'button';
+            boton.textContent = String(sugerencia);
+
+            boton.addEventListener('click', () => {
+                preguntarBizPilotIA(sugerencia);
+            });
+
+            contenedorSugerencias.appendChild(boton);
+        });
+
+        burbuja.appendChild(contenedorSugerencias);
+    }
+}
+
+
+/**
+ * Abre una pantalla recomendada por el motor local.
+ */
+function abrirModuloDesdeBizPilotIA(area, modulo) {
+    const configuracionArea = configuracionAreas[area];
+    const configuracionModulo = configuracionModulos[modulo];
+
+    if (
+        !configuracionArea
+        || !configuracionModulo
+        || configuracionModulo.area !== area
+    ) {
+        agregarMensajeBizPilotIA(
+            'error',
+            'No se pudo abrir el modulo recomendado.'
+        );
+
+        return;
+    }
+
+    seleccionarArea(
+        area,
+        modulo
+    );
+}
+
+async function enviarPreguntaBizPilotIA(event) {
+    event.preventDefault();
+
+    if (bizPilotIAProcesando) {
+        return;
+    }
+
+    const campoPregunta = document.getElementById('bizpilot-ia-pregunta');
+
+    if (!campoPregunta) {
+        return;
+    }
+
+    const pregunta = campoPregunta.value.trim();
+
+    if (!pregunta) {
+        campoPregunta.focus();
+        return;
+    }
+
+    if (pregunta.length > 500) {
+        agregarMensajeBizPilotIA(
+            'error',
+            'La pregunta no puede superar 500 caracteres.'
+        );
+        return;
+    }
+
+    agregarMensajeBizPilotIA('usuario', pregunta);
+
+    campoPregunta.value = '';
+    establecerProcesandoBizPilotIA(true);
+
+    try {
+        const respuesta = await solicitarRespuestaBizPilotIA(
+            pregunta
+        );
+    
+        renderizarRespuestaBizPilotIA(
+            respuesta
+        );
+    
+    } catch (error) {
+        console.error(
+            'Error al consultar BizPilot IA:',
+            error
+        );
+    
+        agregarMensajeBizPilotIA(
+            'error',
+            error.message || 'No se pudo procesar la pregunta.'
+        );
+    
+    } finally {
+        establecerProcesandoBizPilotIA(false);
+        campoPregunta.focus();
+    }
+}

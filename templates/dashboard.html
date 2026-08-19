@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="/static/dashboard_style.css?v=dashboard-financiero-20260811-1">
     <link rel="stylesheet" href="/static/crm_embudo.css?v=crm-completo-20260818-1">
     <link rel="stylesheet" href="/static/rrhh.css?v=rrhh-20260818-1">
+    <link rel="stylesheet" href="/static/bizpilot_ia.css?v=bizpilot-ia-2">
 </head>
 <body>
     <header class="app-header">
@@ -28,7 +29,7 @@
                 <button type="button" class="area-tab" data-area="finanzas" aria-pressed="false">Finanzas</button>
                 <button type="button" class="area-tab" data-area="crm" aria-pressed="false">CRM</button>
                 <button type="button" class="area-tab" data-area="rrhh" aria-pressed="false">RR. HH.</button>
-                <button type="button" class="area-tab" data-area="copilot" aria-pressed="false">CoPilot</button>
+                <button type="button" class="area-tab" data-area="copilot" aria-pressed="false">BizPilot IA</button>
             </div>
 
             <div class="module-navigation">
@@ -2859,15 +2860,155 @@
             </form>
         </div>
 
-        <div id="vista-ia-copilot" class="module-container oculto">
-            <div class="modulo-header">
-                <h2>BizPilot CoPilot</h2>
-            </div>
-            <p>Asistente inteligente en construcción...</p>
+        <!-- NUEVO: INICIO PANEL BIZPILOT IA -->
+<div id="vista-ia-copilot" class="module-container oculto">
+
+    <!-- Encabezado principal del asistente -->
+    <div class="modulo-header">
+        <div>
+            <p class="eyebrow">Asistente del sistema</p>
+            <h2>BizPilot IA</h2>
         </div>
+
+        <button
+            type="button"
+            class="btn-secondary"
+            onclick="limpiarChatBizPilotIA()"
+        >
+            Limpiar chat
+        </button>
+    </div>
+
+    <!-- Resumen de las funciones disponibles -->
+    <div class="bizpilot-ia-capabilities">
+        <article>
+            <strong>Encuentra funciones</strong>
+            <span>Pregunta donde esta cualquier modulo.</span>
+        </article>
+
+        <article>
+            <strong>Explica procesos</strong>
+            <span>Recibe pasos para completar una tarea.</span>
+        </article>
+
+        <article>
+            <strong>Analiza tu operacion</strong>
+            <span>Consulta alertas y recomendaciones empresariales.</span>
+        </article>
+    </div>
+
+    <!-- Contenedor general: chat y preguntas rapidas -->
+    <div class="bizpilot-ia-layout">
+
+        <!-- Columna principal del chat -->
+        <section
+            class="bizpilot-ia-chat"
+            aria-label="Chat con BizPilot IA"
+        >
+
+            <!-- Aqui JavaScript colocara los mensajes -->
+            <div
+                id="bizpilot-ia-mensajes"
+                class="bizpilot-ia-messages"
+                role="log"
+                aria-live="polite"
+                aria-relevant="additions"
+            ></div>
+
+            <!-- Indicador temporal mientras se procesa la pregunta -->
+            <div
+                id="bizpilot-ia-escribiendo"
+                class="bizpilot-ia-typing oculto"
+                role="status"
+            >
+                BizPilot IA esta revisando la pregunta...
+            </div>
+
+            <!-- Formulario para enviar preguntas -->
+            <form
+                id="form-bizpilot-ia"
+                class="bizpilot-ia-composer"
+                onsubmit="enviarPreguntaBizPilotIA(event)"
+            >
+                <label for="bizpilot-ia-pregunta">
+                    Escribe tu pregunta
+                </label>
+
+                <div class="bizpilot-ia-input-row">
+                    <textarea
+                        id="bizpilot-ia-pregunta"
+                        rows="2"
+                        maxlength="500"
+                        placeholder="Ejemplo: Como registro un gasto"
+                        required
+                    ></textarea>
+
+                    <button
+                        id="bizpilot-ia-enviar"
+                        type="submit"
+                        class="btn-primary"
+                    >
+                        Enviar
+                    </button>
+                </div>
+
+                <span>
+                    Enter para enviar. Shift + Enter para otra linea.
+                </span>
+            </form>
+        </section>
+
+        <!-- Columna lateral con accesos rapidos -->
+        <aside
+            class="bizpilot-ia-suggestions"
+            aria-label="Preguntas sugeridas"
+        >
+            <div>
+                <p class="eyebrow">Prueba preguntando</p>
+                <h3>Preguntas rapidas</h3>
+            </div>
+
+            <button
+                type="button"
+                onclick="preguntarBizPilotIA('Como registro una venta')"
+            >
+                Como registro una venta
+            </button>
+
+            <button
+                type="button"
+                onclick="preguntarBizPilotIA('Donde veo cuentas por cobrar')"
+            >
+                Donde veo cuentas por cobrar
+            </button>
+
+            <button
+                type="button"
+                onclick="preguntarBizPilotIA('Que productos tienen poco inventario')"
+            >
+                Productos con poco inventario
+            </button>
+
+            <button
+                type="button"
+                onclick="preguntarBizPilotIA('Como doy de baja a un empleado')"
+            >
+                Como doy de baja a un empleado
+            </button>
+
+            <div class="bizpilot-ia-stage-note">
+                <strong>Version inicial</strong>
+
+                <p>
+                    Esta version utiliza conocimiento y reglas internas de BizPilot.
+                </p>
+            </div>
+        </aside>
+    </div>
+</div>
 
     </main>
 
-    <script src="/static/dashboard.js?v=rrhh-20260818-1"></script>
+    <script src="/static/dashboard.js?v=bizpilot-ia-chat-2"></script>
 </body>
 </html>

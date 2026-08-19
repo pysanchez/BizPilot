@@ -104,6 +104,36 @@ def obtener_nombre_empresa(id_empresa):
             "mensaje": "No se pudo consultar la empresa"
         }
 
+# VALIDACION DE USUARIO PARA BIZPILOT IA
+
+def usuario_pertenece_empresa(id_usuario, id_empresa):
+    """
+    Comprueba que el usuario pertenece a la empresa indicada.
+
+    Esta funcion evita que un usuario consulte la IA utilizando
+    intencionalmente el identificador de otra empresa.
+    """
+
+    try:
+        response = (
+            supabase
+            .table("usuarios")
+            .select("id_usuario")
+            .eq("id_usuario", id_usuario)
+            .eq("id_empresa", id_empresa)
+            .limit(1)
+            .execute()
+        )
+
+        return bool(response.data)
+
+    except Exception as error:
+        print(
+            f"Error al validar usuario y empresa: {error}"
+        )
+
+        return False
+
 # --- INVENTARIO Y PRODUCTOS ---
 def crear_producto(datos_producto):
     try:
