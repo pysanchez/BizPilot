@@ -68,11 +68,13 @@ class PreguntaBizPilotIASchema(BaseModel):
 
 
 @app.post("/api/ia/ayuda")
+@app.post("/api/ia/ayuda")
 def consultar_ayuda_bizpilot_ia(
     pregunta: PreguntaBizPilotIASchema
 ):
     """
-    Recibe una pregunta y devuelve la respuesta del motor local.
+    Recibe una pregunta, valida al usuario y genera
+    una respuesta local o una consulta de datos.
     """
 
     usuario_valido = database.usuario_pertenece_empresa(
@@ -90,12 +92,10 @@ def consultar_ayuda_bizpilot_ia(
         pregunta.mensaje
     )
 
-    respuesta = ia_motor.responder_pregunta(
-        pregunta.mensaje
-    )
+    tema = respuesta.get("tema")
 
-    # NUEVO: CONSULTA REAL DE STOCK BAJO
-    if respuesta.get("tema") == "stock_bajo":
+    # CONSULTA REAL: STOCK BAJO
+    if tema == "stock_bajo":
         resultado_stock = (
             database.obtener_productos_stock_bajo(
                 pregunta.id_empresa
@@ -112,6 +112,7 @@ def consultar_ayuda_bizpilot_ia(
             }
 
         productos = resultado_stock.get("data") or []
+
         total_productos = len(productos)
 
         total_agotados = sum(
@@ -120,7 +121,6 @@ def consultar_ayuda_bizpilot_ia(
             if producto.get("estado") == "Agotado"
         )
 
-        # Evita llenar el chat con cientos de registros.
         productos_mostrados = productos[:20]
 
         if total_productos == 0:
@@ -145,6 +145,147 @@ def consultar_ayuda_bizpilot_ia(
             "agotados": total_agotados,
             "mostrados": len(productos_mostrados),
             "productos": productos_mostrados
+        }
+
+    # CONSULTA REAL: CUENTAS VENCIDAS
+    elif tema == "cxc_vencida":
+        resultado_cxc = (
+            database.obtener_clientes_cxc_vencida_ia(
+                pregunta.id_empresa
+            )
+        )
+
+        if not resultado_cxc.get("exito"):
+            return {
+                "exito": False,
+                "mensaje": resultado_cxc.get(
+                    "mensaje",
+                    "No se pudo consultar la cobranza vencida"
+                )
+            }
+
+        clientes = resultado_cxc.get("data") or []
+
+        total_clientes = int(
+            resultado_cxc.get("total_clientes") or 0
+        )
+
+        total_cuentas = int(
+            resultado_cxc.get("total_cuentas") or 0
+        )
+
+        total_vencido = float(
+            resultado_cxc.get("total_vencido") or 0
+        )
+
+        clientes_mostrados = clientes[:20]
+
+        if total_clientes == 0:
+            respuesta["respuesta"] = (
+                "No encontre clientes con cuentas vencidas. "
+                "Actualmente no tienes cobranza vencida."
+            )
+        else:
+            respuesta["respuesta"] = (
+                f"Encontre {total_clientes} cliente(s) con "
+                f"{total_cuentas} cuenta(s) vencida(s), por un "
+                f"saldo total de ${total_vencido:,.2f}."
+            )
+
+        respuesta["tipo"] = "consulta_datos"
+        respuesta["pasos"] = []
+
+        respuesta["datos"] = {
+            "tipo": "cxc_vencida",
+            "total_clientes": total_clientes,
+            "total_cuentas": total_cuentas,
+            "total_vencido": total_vencido,
+            "mostrados": len(clientes_mostrados),
+            "clientes": clientes_mostrados
+        }
+
+        # CONSULTA REAL: CUENTAS POR PAGAR URGENTES
+    elif tema == "cxp_proxima":
+        resultado_cxp = (
+            database.obtener_cxp_proximas_ia(
+                pregunta.id_empresa,
+                dias_anticipacion=7
+            )
+        )
+
+        if not resultado_cxp.get("exito"):
+            return {
+                "exito": False,
+                "mensaje": resultado_cxp.get(
+                    "mensaje",
+                    "No se pudieron consultar las cuentas por pagar"
+                )
+            }
+
+        cuentas = resultado_cxp.get("data") or []
+
+        total_cuentas = int(
+            resultado_cxp.get("total_cuentas") or 0
+        )
+
+        total_saldo = float(
+            resultado_cxp.get("total_saldo") or 0
+        )
+
+        total_vencidas = int(
+            resultado_cxp.get("vencidas") or 0
+        )
+
+        total_vencen_hoy = int(
+            resultado_cxp.get("vencen_hoy") or 0
+        )
+
+        total_proximas = int(
+            resultado_cxp.get("proximas") or 0
+        )
+
+        total_sin_fecha = int(
+            resultado_cxp.get("sin_fecha") or 0
+        )
+
+        cuentas_mostradas = cuentas[:20]
+
+        if total_cuentas == 0:
+            respuesta["respuesta"] = (
+                "No encontre cuentas por pagar vencidas "
+                "ni pagos que venzan durante los proximos "
+                "siete dias."
+            )
+        else:
+            respuesta["respuesta"] = (
+                f"Encontre {total_cuentas} cuenta(s) urgente(s), "
+                f"con un saldo total de ${total_saldo:,.2f}. "
+                f"{total_vencidas} estan vencidas, "
+                f"{total_vencen_hoy} vencen hoy y "
+                f"{total_proximas} vencen proximamente."
+            )
+
+        if total_sin_fecha > 0:
+            respuesta["respuesta"] += (
+                f" Ademas, {total_sin_fecha} compra(s) "
+                "a credito no pudieron evaluarse porque "
+                "no tienen una fecha registrada."
+            )
+
+        respuesta["tipo"] = "consulta_datos"
+        respuesta["pasos"] = []
+
+        respuesta["datos"] = {
+            "tipo": "cxp_proxima",
+            "dias_anticipacion": 7,
+            "total_cuentas": total_cuentas,
+            "total_saldo": total_saldo,
+            "vencidas": total_vencidas,
+            "vencen_hoy": total_vencen_hoy,
+            "proximas": total_proximas,
+            "sin_fecha": total_sin_fecha,
+            "mostrados": len(cuentas_mostradas),
+            "cuentas": cuentas_mostradas
         }
 
     return {

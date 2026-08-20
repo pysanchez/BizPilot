@@ -8917,11 +8917,20 @@ function renderizarRespuestaBizPilotIA(datos) {
         ? datos.datos
         : null;
 
-    if (
+        if (
         datosConsulta
         && datosConsulta.tipo === 'stock_bajo'
     ) {
         renderizarStockBajoBizPilotIA(
+            burbuja,
+            datosConsulta
+        );
+
+    } else if (
+        datosConsulta
+        && datosConsulta.tipo === 'cxc_vencida'
+    ) {
+        renderizarCuentasVencidasBizPilotIA(
             burbuja,
             datosConsulta
         );
@@ -8989,6 +8998,152 @@ function renderizarRespuestaBizPilotIA(datos) {
     }
 }
 
+/**
+ * Muestra clientes con cobranza vencida.
+ *
+ * Los datos ya vienen agrupados por cliente desde Python.
+ */
+function renderizarCuentasVencidasBizPilotIA(
+    burbuja,
+    datosConsulta
+) {
+    if (
+        !burbuja
+        || !datosConsulta
+        || datosConsulta.tipo !== 'cxc_vencida'
+    ) {
+        return;
+    }
+
+    const clientes = Array.isArray(
+        datosConsulta.clientes
+    )
+        ? datosConsulta.clientes
+        : [];
+
+    if (clientes.length === 0) {
+        return;
+    }
+
+    const totalClientes = Number(
+        datosConsulta.total_clientes
+        || clientes.length
+    );
+
+    const totalCuentas = Number(
+        datosConsulta.total_cuentas || 0
+    );
+
+    const totalVencido = Number(
+        datosConsulta.total_vencido || 0
+    );
+
+    const contenedor = document.createElement('div');
+    contenedor.className = 'bizpilot-ia-data-block';
+
+    const encabezado = document.createElement('div');
+    encabezado.className = 'bizpilot-ia-data-header';
+
+    const titulo = document.createElement('strong');
+    titulo.textContent = 'Cobranza vencida';
+
+    const resumen = document.createElement('span');
+    resumen.textContent = (
+        `${totalClientes} cliente(s) | `
+        + `${totalCuentas} cuenta(s) | `
+        + formatearMoneda(totalVencido)
+    );
+
+    encabezado.appendChild(titulo);
+    encabezado.appendChild(resumen);
+    contenedor.appendChild(encabezado);
+
+    const lista = document.createElement('div');
+    lista.className = 'bizpilot-ia-cxc-list';
+
+    clientes.forEach(cliente => {
+        const tarjeta = document.createElement('article');
+        tarjeta.className = 'bizpilot-ia-cxc-item';
+
+        const cabecera = document.createElement('div');
+        cabecera.className = 'bizpilot-ia-cxc-heading';
+
+        const nombre = document.createElement('strong');
+        nombre.textContent = (
+            cliente.nombre || 'Cliente sin nombre'
+        );
+
+        const dias = Number(
+            cliente.dias_maximos_vencido || 0
+        );
+
+        const etiqueta = document.createElement('span');
+        etiqueta.className = 'bizpilot-ia-cxc-badge';
+        etiqueta.textContent = `${dias} dia(s) vencido`;
+
+        cabecera.appendChild(nombre);
+        cabecera.appendChild(etiqueta);
+
+        const detalles = document.createElement('div');
+        detalles.className = 'bizpilot-ia-cxc-details';
+
+        const saldo = document.createElement('span');
+        saldo.textContent = (
+            `Saldo vencido: ${
+                formatearMoneda(
+                    cliente.saldo_vencido
+                )
+            }`
+        );
+
+        const cuentas = document.createElement('span');
+        cuentas.textContent = (
+            `Cuentas vencidas: ${
+                Number(cliente.cuentas_vencidas || 0)
+            }`
+        );
+
+        const vencimiento = document.createElement('span');
+        vencimiento.textContent = (
+            `Vencimiento mas antiguo: ${
+                formatearFechaCXC(
+                    cliente.fecha_vencimiento_mas_antigua
+                )
+            }`
+        );
+
+        const telefono = document.createElement('span');
+        telefono.textContent = (
+            `Telefono: ${
+                cliente.telefono || 'Sin telefono'
+            }`
+        );
+
+        detalles.appendChild(saldo);
+        detalles.appendChild(cuentas);
+        detalles.appendChild(vencimiento);
+        detalles.appendChild(telefono);
+
+        tarjeta.appendChild(cabecera);
+        tarjeta.appendChild(detalles);
+        lista.appendChild(tarjeta);
+    });
+
+    contenedor.appendChild(lista);
+
+    if (totalClientes > clientes.length) {
+        const aviso = document.createElement('span');
+        aviso.className = 'bizpilot-ia-data-more';
+        aviso.textContent = (
+            `Mostrando ${clientes.length} `
+            + `de ${totalClientes} clientes.`
+        );
+
+        contenedor.appendChild(aviso);
+    }
+
+    burbuja.appendChild(contenedor);
+}
 
 /**
  * Abre una pantalla recomendada por el motor local.

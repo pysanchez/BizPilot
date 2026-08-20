@@ -1937,6 +1937,363 @@ def obtener_cuentas_por_cobrar(id_empresa):
         print(f"Error al obtener CxC: {e}")
         return None
 
+# CLIENTES CON CUENTAS POR COBRAR VENCIDAS PARA IA
+def obtener_clientes_cxc_vencida_ia(id_empresa):
+    """
+    Consulta cuentas vencidas y las agrupa por cliente.
+
+    Esta funcion solamente lee informacion.
+    No registra cobros ni modifica ventas.
+    """
+
+    try:
+        response = (
+            supabase
+            .table("ventas")
+            .select(
+                "id_venta,id_cliente,cliente,total,"
+                "monto_pagado,estado_pago,fecha,"
+                "fecha_vencimiento,"
+                "clientes(nombre,telefono)"
+            )
+            .eq("id_empresa", id_empresa)
+            .eq("tipo_venta", "Credito")
+            .execute()
+        )
+
+        hoy = datetime.now(
+            _ZONA_HORARIA_NEGOCIO
+        ).date()
+
+        clientes_vencidos = {}
+
+        for cuenta in response.data or []:
+            total = float(
+                cuenta.get("total") or 0
+            )
+
+            monto_pagado = float(
+                cuenta.get("monto_pagado") or 0
+            )
+
+            saldo = max(
+                total - monto_pagado,
+                0
+            )
+
+            if saldo <= 0.009:
+                continue
+
+            fecha_vencimiento = _fecha_local_finanzas(
+                cuenta.get("fecha_vencimiento")
+            )
+
+            if (
+                fecha_vencimiento is None
+                or fecha_vencimiento >= hoy
+            ):
+                continue
+
+            id_cliente = cuenta.get("id_cliente")
+
+            if id_cliente is None:
+                continue
+
+            id_cliente = int(id_cliente)
+
+            datos_cliente = (
+                cuenta.get("clientes") or {}
+            )
+
+            nombre_cliente = (
+                cuenta.get("cliente")
+                or datos_cliente.get("nombre")
+                or f"Cliente {id_cliente}"
+            )
+
+            telefono = (
+                datos_cliente.get("telefono")
+                if isinstance(datos_cliente, dict)
+                else None
+            )
+
+            dias_vencidos = (
+                hoy - fecha_vencimiento
+            ).days
+
+            if id_cliente not in clientes_vencidos:
+                clientes_vencidos[id_cliente] = {
+                    "id_cliente": id_cliente,
+                    "nombre": nombre_cliente,
+                    "telefono": telefono,
+                    "cuentas_vencidas": 0,
+                    "saldo_vencido": 0,
+                    "dias_maximos_vencido": 0,
+                    "fecha_vencimiento_mas_antigua": None
+                }
+
+            cliente = clientes_vencidos[id_cliente]
+
+            cliente["cuentas_vencidas"] += 1
+            cliente["saldo_vencido"] += saldo
+
+            cliente["dias_maximos_vencido"] = max(
+                cliente["dias_maximos_vencido"],
+                dias_vencidos
+            )
+
+            fecha_iso = fecha_vencimiento.isoformat()
+
+            if (
+                cliente["fecha_vencimiento_mas_antigua"] is None
+                or fecha_iso
+                < cliente["fecha_vencimiento_mas_antigua"]
+            ):
+                cliente[
+                    "fecha_vencimiento_mas_antigua"
+                ] = fecha_iso
+
+        clientes = list(
+            clientes_vencidos.values()
+        )
+
+        for cliente in clientes:
+            cliente["saldo_vencido"] = round(
+                cliente["saldo_vencido"],
+                2
+            )
+
+        clientes.sort(
+            key=lambda cliente: (
+                -cliente["saldo_vencido"],
+                -cliente["dias_maximos_vencido"]
+            )
+        )
+
+        total_cuentas = sum(
+            cliente["cuentas_vencidas"]
+            for cliente in clientes
+        )
+
+        total_vencido = round(
+            sum(
+                cliente["saldo_vencido"]
+                for cliente in clientes
+            ),
+            2
+        )
+
+        return {
+            "exito": True,
+            "mensaje": "Consulta de cuentas vencidas completada",
+            "total_clientes": len(clientes),
+            "total_cuentas": total_cuentas,
+            "total_vencido": total_vencido,
+            "data": clientes
+        }
+
+    except Exception as error:
+        print(
+            "Error al consultar cuentas vencidas "
+            f"para BizPilot IA: {error}"
+        )
+
+        return {
+            "exito": False,
+            "mensaje": (
+                "No se pudieron consultar las cuentas vencidas"
+            ),
+            "total_clientes": 0,
+            "total_cuentas": 0,
+            "total_vencido": 0,
+            "data": []
+        }
+
+# CUENTAS POR PAGAR PROXIMAS PARA BIZPILOT IA
+def obtener_cxp_proximas_ia(
+    id_empresa,
+    dias_anticipacion=7
+):
+    """
+    Consulta compras a credito vencidas o que vencen
+    dentro del periodo indicado.
+
+    Esta funcion solamente lee informacion.
+    """
+
+    try:
+        response = (
+            supabase
+            .table("compras")
+            .select("*, proveedores(nombre)")
+            .eq("id_empresa", id_empresa)
+            .eq("tipo_compra", "Credito")
+            .execute()
+        )
+
+        hoy = datetime.now(
+            _ZONA_HORARIA_NEGOCIO
+        ).date()
+
+        cuentas = []
+        cuentas_sin_fecha = 0
+
+        for compra in response.data or []:
+            total = float(
+                compra.get("total") or 0
+            )
+
+            monto_pagado = float(
+                compra.get("monto_pagado") or 0
+            )
+
+            saldo = max(
+                total - monto_pagado,
+                0
+            )
+
+            if saldo <= 0.009:
+                continue
+
+            fecha_compra = _fecha_local_finanzas(
+                compra.get("fecha")
+                or compra.get("fecha_compra")
+                or compra.get("created_at")
+            )
+
+            if fecha_compra is None:
+                cuentas_sin_fecha += 1
+                continue
+
+            dias_credito = int(
+                compra.get("dias_credito") or 0
+            )
+
+            fecha_vencimiento = (
+                fecha_compra
+                + timedelta(days=dias_credito)
+            )
+
+            dias_para_vencer = (
+                fecha_vencimiento - hoy
+            ).days
+
+            # Ignora cuentas que vencen despues
+            # del periodo de anticipacion.
+            if dias_para_vencer > dias_anticipacion:
+                continue
+
+            if dias_para_vencer < 0:
+                estado_alerta = "Vencida"
+
+            elif dias_para_vencer == 0:
+                estado_alerta = "Vence hoy"
+
+            else:
+                estado_alerta = "Proxima"
+
+            proveedor = (
+                compra.get("proveedores") or {}
+            )
+
+            nombre_proveedor = (
+                proveedor.get("nombre")
+                if isinstance(proveedor, dict)
+                else None
+            )
+
+            cuentas.append({
+                "id_compra": compra.get("id_compra"),
+                "proveedor": (
+                    nombre_proveedor
+                    or compra.get("lugar_compra")
+                    or "Sin proveedor"
+                ),
+                "total": round(total, 2),
+                "monto_pagado": round(
+                    monto_pagado,
+                    2
+                ),
+                "saldo": round(saldo, 2),
+                "fecha_compra": (
+                    fecha_compra.isoformat()
+                ),
+                "fecha_vencimiento": (
+                    fecha_vencimiento.isoformat()
+                ),
+                "dias_para_vencer": dias_para_vencer,
+                "estado": estado_alerta
+            })
+
+        cuentas.sort(
+            key=lambda cuenta: (
+                cuenta["dias_para_vencer"],
+                -cuenta["saldo"]
+            )
+        )
+
+        total_saldo = round(
+            sum(
+                cuenta["saldo"]
+                for cuenta in cuentas
+            ),
+            2
+        )
+
+        total_vencidas = sum(
+            1
+            for cuenta in cuentas
+            if cuenta["estado"] == "Vencida"
+        )
+
+        total_vencen_hoy = sum(
+            1
+            for cuenta in cuentas
+            if cuenta["estado"] == "Vence hoy"
+        )
+
+        total_proximas = sum(
+            1
+            for cuenta in cuentas
+            if cuenta["estado"] == "Proxima"
+        )
+
+        return {
+            "exito": True,
+            "mensaje": (
+                "Consulta de cuentas por pagar completada"
+            ),
+            "dias_anticipacion": dias_anticipacion,
+            "total_cuentas": len(cuentas),
+            "total_saldo": total_saldo,
+            "vencidas": total_vencidas,
+            "vencen_hoy": total_vencen_hoy,
+            "proximas": total_proximas,
+            "sin_fecha": cuentas_sin_fecha,
+            "data": cuentas
+        }
+
+    except Exception as error:
+        print(
+            "Error al consultar cuentas por pagar "
+            f"para BizPilot IA: {error}"
+        )
+
+        return {
+            "exito": False,
+            "mensaje": (
+                "No se pudieron consultar las cuentas por pagar"
+            ),
+            "dias_anticipacion": dias_anticipacion,
+            "total_cuentas": 0,
+            "total_saldo": 0,
+            "vencidas": 0,
+            "vencen_hoy": 0,
+            "proximas": 0,
+            "sin_fecha": 0,
+            "data": []
+        }
+
 def registrar_abono_cxc(
     id_empresa,
     id_venta,

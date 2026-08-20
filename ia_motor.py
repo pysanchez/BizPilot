@@ -295,6 +295,33 @@ BASE_CONOCIMIENTO = [
             "modulo": "fin-gastos"
         }
     },
+    
+        # CUENTAS POR PAGAR URGENTES
+    {
+        "id": "cxp_proxima",
+        "frases": [
+            "cuentas por pagar proximas",
+            "pagos proximos a proveedores",
+            "compras por vencer",
+            "deudas por vencer",
+            "cuentas por pagar vencidas",
+            "pagos vencidos a proveedores",
+            "que debo pagar esta semana",
+            "proveedores por pagar esta semana",
+            "pagos urgentes"
+        ],
+        "respuesta": (
+            "Puedo consultar las cuentas por pagar vencidas "
+            "o que vencen durante los proximos siete dias."
+        ),
+        "pasos": [],
+        "accion": {
+            "texto": "Abrir Cuentas por pagar",
+            "area": "finanzas",
+            "modulo": "fin-cxp"
+        }
+    },
+    
     {
         "id": "cuentas_por_pagar",
         "frases": [
@@ -324,6 +351,32 @@ BASE_CONOCIMIENTO = [
             "modulo": "fin-cxp"
         }
     },
+    
+        {
+        "id": "cxc_vencida",
+        "frases": [
+            "cuentas vencidas",
+            "cuentas por cobrar vencidas",
+            "clientes con pagos vencidos",
+            "clientes con deuda vencida",
+            "clientes morosos",
+            "deudas vencidas de clientes",
+            "cobranza vencida",
+            "saldos vencidos",
+            "quien tiene pagos vencidos"
+        ],
+        "respuesta": (
+            "Puedo consultar los clientes que tienen cuentas "
+            "por cobrar vencidas y mostrar su saldo pendiente."
+        ),
+        "pasos": [],
+        "accion": {
+            "texto": "Abrir Cuentas por cobrar",
+            "area": "finanzas",
+            "modulo": "fin-cxc"
+        }
+    },
+    
     {
         "id": "cuentas_por_cobrar",
         "frases": [

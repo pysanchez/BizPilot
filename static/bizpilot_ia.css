@@ -279,7 +279,7 @@
     font-weight: 700;
 }
 
-/* NUEVO: CONTENIDO ESTRUCTURADO DE LAS RESPUESTAS */
+/* CONTENIDO ESTRUCTURADO DE LAS RESPUESTAS */
 
 .bizpilot-ia-section-title {
     display: block;
@@ -433,6 +433,66 @@
     font-style: italic;
 }
 
+/* NUEVO: TARJETAS DE COBRANZA VENCIDA */
+
+.bizpilot-ia-cxc-list {
+    display: grid;
+    gap: 0.65rem;
+}
+
+.bizpilot-ia-cxc-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+    padding: 0.8rem;
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    border-radius: 8px;
+}
+
+.bizpilot-ia-cxc-heading {
+    display: flex;
+    gap: 0.75rem;
+    align-items: flex-start;
+    justify-content: space-between;
+}
+
+.bizpilot-ia-cxc-heading > strong {
+    min-width: 0;
+    color: #111827;
+    font-size: 0.82rem;
+    overflow-wrap: anywhere;
+}
+
+.bizpilot-ia-cxc-badge {
+    flex-shrink: 0;
+    padding: 0.2rem 0.45rem;
+    color: #991b1b;
+    background: #fee2e2;
+    border: 1px solid #fecaca;
+    border-radius: 999px;
+    font-size: 0.68rem;
+    font-weight: 700;
+}
+
+.bizpilot-ia-cxc-details {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.35rem 0.75rem;
+}
+
+.bizpilot-ia-cxc-details span {
+    min-width: 0;
+    color: #4b5563;
+    font-size: 0.72rem;
+    overflow-wrap: anywhere;
+}
+
+.bizpilot-ia-cxc-details span:first-child {
+    color: #991b1b;
+    font-weight: 700;
+}
+
 /* Adaptacion para tablet */
 
 @media (max-width: 960px) {
@@ -490,6 +550,16 @@
     }
 
     .bizpilot-ia-stock-heading {
+        align-items: flex-start;
+    }
+
+    /* NUEVO: COBRANZA VENCIDA EN CELULAR */
+
+    .bizpilot-ia-cxc-details {
+        grid-template-columns: 1fr;
+    }
+
+    .bizpilot-ia-cxc-heading {
         align-items: flex-start;
     }
 }
