@@ -90,12 +90,68 @@ def consultar_ayuda_bizpilot_ia(
         pregunta.mensaje
     )
 
+    respuesta = ia_motor.responder_pregunta(
+        pregunta.mensaje
+    )
+
+    # NUEVO: CONSULTA REAL DE STOCK BAJO
+    if respuesta.get("tema") == "stock_bajo":
+        resultado_stock = (
+            database.obtener_productos_stock_bajo(
+                pregunta.id_empresa
+            )
+        )
+
+        if not resultado_stock.get("exito"):
+            return {
+                "exito": False,
+                "mensaje": resultado_stock.get(
+                    "mensaje",
+                    "No se pudo consultar el inventario"
+                )
+            }
+
+        productos = resultado_stock.get("data") or []
+        total_productos = len(productos)
+
+        total_agotados = sum(
+            1
+            for producto in productos
+            if producto.get("estado") == "Agotado"
+        )
+
+        # Evita llenar el chat con cientos de registros.
+        productos_mostrados = productos[:20]
+
+        if total_productos == 0:
+            respuesta["respuesta"] = (
+                "No encontre productos con stock bajo. "
+                "Todas las existencias se encuentran por encima "
+                "del stock minimo configurado."
+            )
+        else:
+            respuesta["respuesta"] = (
+                f"Encontre {total_productos} producto(s) "
+                f"con stock bajo. De ellos, "
+                f"{total_agotados} estan agotados."
+            )
+
+        respuesta["tipo"] = "consulta_datos"
+        respuesta["pasos"] = []
+
+        respuesta["datos"] = {
+            "tipo": "stock_bajo",
+            "total": total_productos,
+            "agotados": total_agotados,
+            "mostrados": len(productos_mostrados),
+            "productos": productos_mostrados
+        }
+
     return {
         "exito": True,
         "mensaje": "Respuesta generada",
         "data": respuesta
     }
-
 class ProductoSchema(BaseModel):
     id_empresa: int
     sku: str

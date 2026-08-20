@@ -218,6 +218,88 @@ def obtener_productos_empresa(id_empresa):
         print(f"Error al obtener productos: {e}")
         return []
 
+# CONSULTA DE PRODUCTOS CON STOCK BAJO
+def obtener_productos_stock_bajo(id_empresa):
+    """
+    Consulta productos cuya existencia es igual o menor
+    al stock minimo configurado.
+
+    Esta funcion solamente lee informacion.
+    No modifica productos ni existencias.
+    """
+
+    try:
+        response = (
+            supabase
+            .table("productos")
+            .select(
+                "id_producto,sku,nombre,categoria,"
+                "stock,stock_minimo,proveedores(nombre)"
+            )
+            .eq("id_empresa", id_empresa)
+            .order("stock", desc=False)
+            .execute()
+        )
+
+        productos_stock_bajo = []
+
+        for producto in response.data or []:
+            stock_actual = int(
+                producto.get("stock") or 0
+            )
+
+            stock_minimo = int(
+                producto.get("stock_minimo") or 0
+            )
+
+            if stock_actual > stock_minimo:
+                continue
+
+            proveedor = producto.get("proveedores") or {}
+
+            nombre_proveedor = (
+                proveedor.get("nombre")
+                if isinstance(proveedor, dict)
+                else None
+            )
+
+            productos_stock_bajo.append({
+                "id_producto": producto.get("id_producto"),
+                "sku": producto.get("sku"),
+                "nombre": (
+                    producto.get("nombre")
+                    or "Producto sin nombre"
+                ),
+                "categoria": producto.get("categoria"),
+                "stock": stock_actual,
+                "stock_minimo": stock_minimo,
+                "proveedor": nombre_proveedor,
+                "estado": (
+                    "Agotado"
+                    if stock_actual <= 0
+                    else "Stock bajo"
+                )
+            })
+
+        return {
+            "exito": True,
+            "mensaje": "Consulta de stock bajo completada",
+            "total": len(productos_stock_bajo),
+            "data": productos_stock_bajo
+        }
+
+    except Exception as error:
+        print(
+            f"Error al consultar productos con stock bajo: {error}"
+        )
+
+        return {
+            "exito": False,
+            "mensaje": "No se pudo consultar el stock bajo",
+            "total": 0,
+            "data": []
+        }
+
 # --- VENTAS ---
 def registrar_venta(
     id_empresa,

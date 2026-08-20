@@ -8739,6 +8739,144 @@ async function solicitarRespuestaBizPilotIA(pregunta) {
 /**
  * Muestra una respuesta estructurada del motor local.
  */
+
+/**
+ * Muestra productos con stock bajo.
+ *
+ * Recibe la burbuja donde se agregara el contenido
+ * y los datos enviados por FastAPI.
+ */
+function renderizarStockBajoBizPilotIA(
+    burbuja,
+    datosConsulta
+) {
+    if (
+        !burbuja
+        || !datosConsulta
+        || datosConsulta.tipo !== 'stock_bajo'
+    ) {
+        return;
+    }
+
+    const productos = Array.isArray(
+        datosConsulta.productos
+    )
+        ? datosConsulta.productos
+        : [];
+
+    if (productos.length === 0) {
+        return;
+    }
+
+    const total = Number(
+        datosConsulta.total || productos.length
+    );
+
+    const agotados = Number(
+        datosConsulta.agotados || 0
+    );
+
+    const contenedor = document.createElement('div');
+    contenedor.className = 'bizpilot-ia-data-block';
+
+    const encabezado = document.createElement('div');
+    encabezado.className = 'bizpilot-ia-data-header';
+
+    const titulo = document.createElement('strong');
+    titulo.textContent = 'Detalle de inventario';
+
+    const resumen = document.createElement('span');
+    resumen.textContent =
+        `${total} con stock bajo | ${agotados} agotado(s)`;
+
+    encabezado.appendChild(titulo);
+    encabezado.appendChild(resumen);
+    contenedor.appendChild(encabezado);
+
+    const lista = document.createElement('div');
+    lista.className = 'bizpilot-ia-stock-list';
+
+    productos.forEach(producto => {
+        const stock = Number(producto.stock || 0);
+
+        const stockMinimo = Number(
+            producto.stock_minimo || 0
+        );
+
+        const estaAgotado = (
+            producto.estado === 'Agotado'
+            || stock <= 0
+        );
+
+        const tarjeta = document.createElement('article');
+        tarjeta.className = 'bizpilot-ia-stock-item';
+
+        if (estaAgotado) {
+            tarjeta.classList.add('agotado');
+        }
+
+        const cabeceraProducto = document.createElement('div');
+        cabeceraProducto.className =
+            'bizpilot-ia-stock-heading';
+
+        const nombre = document.createElement('strong');
+        nombre.textContent =
+            producto.nombre || 'Producto sin nombre';
+
+        const estado = document.createElement('span');
+        estado.className = 'bizpilot-ia-stock-badge';
+        estado.textContent = estaAgotado
+            ? 'Agotado'
+            : 'Stock bajo';
+
+        cabeceraProducto.appendChild(nombre);
+        cabeceraProducto.appendChild(estado);
+
+        const detalles = document.createElement('div');
+        detalles.className = 'bizpilot-ia-stock-details';
+
+        const existencia = document.createElement('span');
+        existencia.textContent =
+            `Existencia: ${stock}`;
+
+        const minimo = document.createElement('span');
+        minimo.textContent =
+            `Minimo: ${stockMinimo}`;
+
+        const sku = document.createElement('span');
+        sku.textContent =
+            `SKU: ${producto.sku || 'Sin SKU'}`;
+
+        const proveedor = document.createElement('span');
+        proveedor.textContent =
+            `Proveedor: ${
+                producto.proveedor || 'Sin proveedor'
+            }`;
+
+        detalles.appendChild(existencia);
+        detalles.appendChild(minimo);
+        detalles.appendChild(sku);
+        detalles.appendChild(proveedor);
+
+        tarjeta.appendChild(cabeceraProducto);
+        tarjeta.appendChild(detalles);
+        lista.appendChild(tarjeta);
+    });
+
+    contenedor.appendChild(lista);
+
+    if (total > productos.length) {
+        const aviso = document.createElement('span');
+        aviso.className = 'bizpilot-ia-data-more';
+        aviso.textContent =
+            `Mostrando ${productos.length} de ${total} productos.`;
+
+        contenedor.appendChild(aviso);
+    }
+
+    burbuja.appendChild(contenedor);
+}
+
 function renderizarRespuestaBizPilotIA(datos) {
     const burbuja = agregarMensajeBizPilotIA(
         'asistente',
@@ -8769,6 +8907,24 @@ function renderizarRespuestaBizPilotIA(datos) {
 
         burbuja.appendChild(tituloPasos);
         burbuja.appendChild(listaPasos);
+    }
+
+    // RENDER DE CONSULTAS CON DATOS REALES
+    const datosConsulta = (
+        datos
+        && typeof datos.datos === 'object'
+    )
+        ? datos.datos
+        : null;
+
+    if (
+        datosConsulta
+        && datosConsulta.tipo === 'stock_bajo'
+    ) {
+        renderizarStockBajoBizPilotIA(
+            burbuja,
+            datosConsulta
+        );
     }
 
     const acciones = Array.isArray(datos.acciones)
@@ -8897,22 +9053,22 @@ async function enviarPreguntaBizPilotIA(event) {
         const respuesta = await solicitarRespuestaBizPilotIA(
             pregunta
         );
-    
+
         renderizarRespuestaBizPilotIA(
             respuesta
         );
-    
+
     } catch (error) {
         console.error(
             'Error al consultar BizPilot IA:',
             error
         );
-    
+
         agregarMensajeBizPilotIA(
             'error',
             error.message || 'No se pudo procesar la pregunta.'
         );
-    
+
     } finally {
         establecerProcesandoBizPilotIA(false);
         campoPregunta.focus();

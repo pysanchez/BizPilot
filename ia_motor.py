@@ -1,5 +1,3 @@
-# MOTOR LOCAL BIZPILOT IA
-
 import re
 import unicodedata
 from copy import deepcopy
@@ -14,7 +12,8 @@ SUGERENCIAS_GENERALES = [
     "Como doy de baja a un empleado"
 ]
 
-# EQUIVALENCIAS PARA CONJUGACIONES COMUNES
+
+# Equivalencias para conjugaciones comunes.
 EQUIVALENCIAS_PALABRAS = {
     "registro": "registrar",
     "registra": "registrar",
@@ -42,12 +41,29 @@ EQUIVALENCIAS_PALABRAS = {
 
     "agrego": "agregar",
     "agrega": "agregar",
-    "agregando": "agregar"
+    "agregando": "agregar",
+
+    "consulto": "consultar",
+    "consulta": "consultar",
+    "consultas": "consultar",
+    "consultando": "consultar",
+
+    "abro": "abrir",
+    "abre": "abrir",
+    "abriendo": "abrir",
+
+    "busco": "buscar",
+    "busca": "buscar",
+    "buscando": "buscar",
+
+    "reviso": "revisar",
+    "revisa": "revisar",
+    "revisando": "revisar"
 }
 
 
-# Base inicial de conocimiento.
-# Cada elemento representa una intencion que BizPilot IA reconoce.
+# Base local de conocimiento.
+# Cada elemento representa una intencion reconocida por BizPilot IA.
 BASE_CONOCIMIENTO = [
     {
         "id": "punto_venta",
@@ -77,8 +93,6 @@ BASE_CONOCIMIENTO = [
             "modulo": "erp-ventas"
         }
     },
-    
-        # NUEVO: HISTORIAL DE VENTAS
     {
         "id": "historial_ventas",
         "frases": [
@@ -107,8 +121,6 @@ BASE_CONOCIMIENTO = [
             "modulo": "erp-historial-ventas"
         }
     },
-
-    # NUEVO: REGISTRO DE COMPRAS
     {
         "id": "compras",
         "frases": [
@@ -139,8 +151,6 @@ BASE_CONOCIMIENTO = [
             "modulo": "erp-nueva-compra"
         }
     },
-
-    #PROVEEDORES
     {
         "id": "proveedores",
         "frases": [
@@ -170,8 +180,6 @@ BASE_CONOCIMIENTO = [
             "modulo": "erp-proveedores"
         }
     },
-
-    #CLIENTES
     {
         "id": "clientes",
         "frases": [
@@ -202,36 +210,6 @@ BASE_CONOCIMIENTO = [
             "modulo": "erp-clientes"
         }
     },
-    
-    {
-        "id": "gastos",
-        "frases": [
-            "registrar un gasto",
-            "agregar un gasto",
-            "nuevo gasto",
-            "capturar gasto",
-            "donde estan los gastos",
-            "pagar servicio",
-            "registrar egreso"
-        ],
-        "respuesta": (
-            "Los gastos se encuentran en Finanzas. "
-            "Puedes registrar servicios, pagos y otros egresos manuales."
-        ),
-        "pasos": [
-            "Abre el area Finanzas.",
-            "Selecciona Gastos.",
-            "Pulsa el boton para registrar un gasto.",
-            "Captura concepto, categoria, monto y fecha."
-        ],
-        "accion": {
-            "texto": "Abrir Gastos",
-            "area": "finanzas",
-            "modulo": "fin-gastos"
-        }
-    },
-    
-        # `DASHBO`ARD FINANCIERO
     {
         "id": "dashboard_financiero",
         "frases": [
@@ -261,8 +239,6 @@ BASE_CONOCIMIENTO = [
             "modulo": "fin-resumen"
         }
     },
-
-    # ANALISIS DE INGRESOS
     {
         "id": "analisis_ingresos",
         "frases": [
@@ -292,8 +268,33 @@ BASE_CONOCIMIENTO = [
             "modulo": "fin-ingresos"
         }
     },
-
-    # CUENTAS POR PAGAR
+    {
+        "id": "gastos",
+        "frases": [
+            "registrar un gasto",
+            "agregar un gasto",
+            "nuevo gasto",
+            "capturar gasto",
+            "donde estan los gastos",
+            "pagar servicio",
+            "registrar egreso"
+        ],
+        "respuesta": (
+            "Los gastos se encuentran en Finanzas. "
+            "Puedes registrar servicios, pagos y otros egresos manuales."
+        ),
+        "pasos": [
+            "Abre el area Finanzas.",
+            "Selecciona Gastos.",
+            "Pulsa el boton para registrar un gasto.",
+            "Captura concepto, categoria, monto y fecha."
+        ],
+        "accion": {
+            "texto": "Abrir Gastos",
+            "area": "finanzas",
+            "modulo": "fin-gastos"
+        }
+    },
     {
         "id": "cuentas_por_pagar",
         "frases": [
@@ -323,38 +324,6 @@ BASE_CONOCIMIENTO = [
             "modulo": "fin-cxp"
         }
     },
-
-    # COMPROBANTES
-    {
-        "id": "comprobantes",
-        "frases": [
-            "comprobantes de pago",
-            "consultar comprobantes",
-            "ver comprobantes",
-            "pagos recibidos",
-            "comprobantes de ventas",
-            "comprobantes de clientes",
-            "recibos de pago",
-            "historial de cobros"
-        ],
-        "respuesta": (
-            "Los comprobantes se encuentran en Finanzas. "
-            "Ahi puedes consultar pagos de ventas de contado "
-            "y abonos recibidos de cuentas por cobrar."
-        ),
-        "pasos": [
-            "Abre el area Finanzas.",
-            "Selecciona Comprobantes.",
-            "Selecciona el periodo que quieres revisar.",
-            "Consulta los pagos de publico general, clientes y cuentas por cobrar."
-        ],
-        "accion": {
-            "texto": "Abrir Comprobantes",
-            "area": "finanzas",
-            "modulo": "fin-comprobantes"
-        }
-    },
-    
     {
         "id": "cuentas_por_cobrar",
         "frases": [
@@ -385,31 +354,143 @@ BASE_CONOCIMIENTO = [
         }
     },
     {
+        "id": "comprobantes",
+        "frases": [
+            "comprobantes de pago",
+            "consultar comprobantes",
+            "ver comprobantes",
+            "pagos recibidos",
+            "comprobantes de ventas",
+            "comprobantes de clientes",
+            "recibos de pago",
+            "historial de cobros"
+        ],
+        "respuesta": (
+            "Los comprobantes se encuentran en Finanzas. "
+            "Ahi puedes consultar pagos de ventas de contado "
+            "y abonos recibidos de cuentas por cobrar."
+        ),
+        "pasos": [
+            "Abre el area Finanzas.",
+            "Selecciona Comprobantes.",
+            "Selecciona el periodo que quieres revisar.",
+            "Consulta los pagos de publico general, clientes y cuentas por cobrar."
+        ],
+        "accion": {
+            "texto": "Abrir Comprobantes",
+            "area": "finanzas",
+            "modulo": "fin-comprobantes"
+        }
+    },
+    {
+        "id": "stock_bajo",
+        "frases": [
+            "stock bajo",
+            "productos con poco inventario",
+            "productos con stock bajo",
+            "productos por agotarse",
+            "productos agotados",
+            "que productos debo surtir",
+            "que productos necesitan compra",
+            "faltantes de inventario",
+            "alertas de inventario"
+        ],
+        "respuesta": (
+            "Puedo consultar los productos cuya existencia sea "
+            "igual o menor al stock minimo configurado."
+        ),
+        "pasos": [],
+        "accion": {
+            "texto": "Abrir Inventario",
+            "area": "operacion",
+            "modulo": "erp-inventario"
+        }
+    },
+    {
         "id": "inventario",
         "frases": [
-            "poco inventario",
-            "productos con poco inventario",
-            "stock bajo",
-            "productos por agotarse",
             "consultar inventario",
+            "ver inventario",
             "ver existencias",
-            "almacen",
-            "inventario"
+            "inventario y almacen",
+            "abrir inventario",
+            "buscar producto en inventario",
+            "donde esta el inventario",
+            "almacen"
         ],
         "respuesta": (
             "El inventario se encuentra en Operacion, dentro de "
-            "Inventario y almacen. En esta primera version puedo llevarte "
-            "al modulo; el analisis automatico de stock se conectara despues."
+            "Inventario y almacen. Ahi puedes consultar productos, "
+            "existencias y alertas de stock."
         ),
         "pasos": [
             "Abre el area Operacion.",
             "Selecciona Inventario y almacen.",
-            "Revisa la existencia de cada producto."
+            "Busca el producto que quieres consultar.",
+            "Revisa su existencia y stock minimo."
         ],
         "accion": {
             "texto": "Abrir Inventario",
             "area": "operacion",
             "modulo": "erp-inventario"
+        }
+    },
+    {
+        "id": "dashboard_comercial",
+        "frases": [
+            "dashboard comercial",
+            "resumen comercial",
+            "indicadores comerciales",
+            "resultados del crm",
+            "tasa de conversion",
+            "valor del embudo",
+            "seguimientos vencidos",
+            "rendimiento comercial"
+        ],
+        "respuesta": (
+            "El Dashboard comercial se encuentra en CRM. "
+            "Ahi puedes consultar prospectos activos, oportunidades, "
+            "seguimientos vencidos, cierres y tasa de conversion."
+        ),
+        "pasos": [
+            "Abre el area CRM.",
+            "Selecciona Dashboard comercial.",
+            "Revisa los indicadores generales.",
+            "Consulta los seguimientos y cierres recientes."
+        ],
+        "accion": {
+            "texto": "Abrir Dashboard comercial",
+            "area": "crm",
+            "modulo": "crm-dashboard"
+        }
+    },
+    {
+        "id": "prospectos",
+        "frases": [
+            "registrar un prospecto",
+            "agregar un prospecto",
+            "nuevo prospecto",
+            "prospectos y seguimientos",
+            "seguimiento de prospecto",
+            "contactar prospecto",
+            "calificar prospecto",
+            "descartar prospecto"
+        ],
+        "respuesta": (
+            "Los prospectos se administran en CRM, dentro de "
+            "Prospectos y seguimientos. Ahi puedes registrar contactos, "
+            "programar seguimientos y actualizar su estatus."
+        ),
+        "pasos": [
+            "Abre el area CRM.",
+            "Selecciona Prospectos y seguimientos.",
+            "Registra un prospecto o selecciona uno existente.",
+            "Captura el seguimiento y define la proxima accion."
+        ],
+        "accion": {
+            "texto": "Abrir Prospectos y seguimientos",
+            "area": "crm",
+            "modulo": "crm-prospectos"
         }
     },
     {
@@ -440,70 +521,6 @@ BASE_CONOCIMIENTO = [
             "modulo": "crm-embudo"
         }
     },
-    
-        # DASHBOARD COMERCIAL
-    {
-        "id": "dashboard_comercial",
-        "frases": [
-            "dashboard comercial",
-            "resumen comercial",
-            "indicadores comerciales",
-            "resultados del crm",
-            "tasa de conversion",
-            "valor del embudo",
-            "seguimientos vencidos",
-            "rendimiento comercial"
-        ],
-        "respuesta": (
-            "El Dashboard comercial se encuentra en CRM. "
-            "Ahi puedes consultar prospectos activos, oportunidades, "
-            "seguimientos vencidos, cierres y tasa de conversion."
-        ),
-        "pasos": [
-            "Abre el area CRM.",
-            "Selecciona Dashboard comercial.",
-            "Revisa los indicadores generales.",
-            "Consulta los seguimientos y cierres recientes."
-        ],
-        "accion": {
-            "texto": "Abrir Dashboard comercial",
-            "area": "crm",
-            "modulo": "crm-dashboard"
-        }
-    },
-
-    # PROSPECTOS Y SEGUIMIENTOS
-    {
-        "id": "prospectos",
-        "frases": [
-            "registrar un prospecto",
-            "agregar un prospecto",
-            "nuevo prospecto",
-            "prospectos y seguimientos",
-            "seguimiento de prospecto",
-            "contactar prospecto",
-            "calificar prospecto",
-            "descartar prospecto"
-        ],
-        "respuesta": (
-            "Los prospectos se administran en CRM, dentro de "
-            "Prospectos y seguimientos. Ahi puedes registrar contactos, "
-            "programar seguimientos y actualizar su estatus."
-        ),
-        "pasos": [
-            "Abre el area CRM.",
-            "Selecciona Prospectos y seguimientos.",
-            "Registra un prospecto o selecciona uno existente.",
-            "Captura el seguimiento y define la proxima accion."
-        ],
-        "accion": {
-            "texto": "Abrir Prospectos y seguimientos",
-            "area": "crm",
-            "modulo": "crm-prospectos"
-        }
-    },
-
-    # NEGOCIACIONES CERRADAS
     {
         "id": "negociaciones_cerradas",
         "frases": [
@@ -533,8 +550,6 @@ BASE_CONOCIMIENTO = [
             "modulo": "crm-negociaciones"
         }
     },
-    
-        # DIRECTORIO DE EMPLEADOS
     {
         "id": "empleados",
         "frases": [
@@ -565,8 +580,6 @@ BASE_CONOCIMIENTO = [
             "modulo": "rrhh-empleados"
         }
     },
-
-    # MOVIMIENTOS ADMINISTRATIVOS
     {
         "id": "movimientos_rrhh",
         "frases": [
@@ -597,8 +610,6 @@ BASE_CONOCIMIENTO = [
             "modulo": "rrhh-administrativo"
         }
     },
-
-    # CORREGIDO: BAJA DE EMPLEADO
     {
         "id": "baja_empleado",
         "frases": [
@@ -638,7 +649,7 @@ def normalizar_texto(valor):
     Ejemplo:
     Como REGISTRO una venta?
     se convierte en:
-    como registro una venta
+    como registrar una venta
     """
 
     texto = str(valor or "").lower().strip()
@@ -665,9 +676,9 @@ def normalizar_texto(valor):
         " ",
         texto
     ).strip()
-    
+
     palabras = texto.split()
-    
+
     palabras_normalizadas = [
         EQUIVALENCIAS_PALABRAS.get(
             palabra,
@@ -675,7 +686,7 @@ def normalizar_texto(valor):
         )
         for palabra in palabras
     ]
-    
+
     return " ".join(palabras_normalizadas)
 
 
@@ -757,8 +768,8 @@ def respuesta_sin_resultado():
         "tipo": "sin_resultado",
         "respuesta": (
             "Todavia no tengo una respuesta confiable para esa pregunta. "
-            "Puedes preguntarme por ventas, gastos, inventario, cobranza, "
-            "cotizaciones o movimientos de empleados."
+            "Puedes preguntarme por ventas, compras, inventario, finanzas, "
+            "CRM o movimientos de empleados."
         ),
         "pasos": [],
         "acciones": [],
